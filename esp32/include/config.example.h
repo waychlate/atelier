@@ -1,5 +1,8 @@
 #pragma once
 
+// Copy this file to config.h and fill in real values. config.h is
+// gitignored so your Wi-Fi credentials and server IP never get committed.
+
 // ---------------------------------------------------------------------------
 // Wi-Fi / server
 // ---------------------------------------------------------------------------
