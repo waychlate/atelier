@@ -8,7 +8,8 @@ struct ImuSample {
     float gx, gy, gz;       // deg/s
 };
 
-// Wakes the MPU-9250 and configures ±4 g / ±1000 dps. Returns false if the
+// Wakes the IMU (MPU-6050, MPU-6500, MPU-9250/9255 - detected via WHO_AM_I)
+// and configures ±4 g / ±1000 dps. Returns false if the
 // device does not respond on the I2C bus.
 bool imu_init();
 

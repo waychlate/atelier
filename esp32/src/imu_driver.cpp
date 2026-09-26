@@ -60,22 +60,29 @@ bool imu_init() {
 
     // Wake from sleep and select the PLL gyro clock (more stable than internal RC).
     if (!write_reg(REG_PWR_MGMT_1, 0x01)) {
-        Serial.println("[IMU] No ACK from MPU-9250 - check wiring/address");
+        Serial.println("[IMU] No ACK from IMU - check wiring/address");
         scan_i2c_bus();
         return false;
     }
     delay(100);
 
+    // The accel/gyro registers used here are identical across these chips.
+    // Many boards sold as "MPU-9250" actually carry an MPU-6500 (0x70).
     uint8_t who = 0;
     read_regs(REG_WHO_AM_I, &who, 1);
-    Serial.printf("[IMU] WHO_AM_I = 0x%02X%s\n", who,
-                  who == 0x71 ? " (MPU-9250)" : " (unexpected, continuing)");
+    const char *chip = who == 0x68   ? "MPU-6050"
+                       : who == 0x70 ? "MPU-6500"
+                       : who == 0x71 ? "MPU-9250"
+                       : who == 0x73 ? "MPU-9255"
+                                     : "unknown, continuing";
+    Serial.printf("[IMU] WHO_AM_I = 0x%02X (%s)\n", who, chip);
 
     bool ok = true;
-    ok &= write_reg(REG_CONFIG, 0x03);         // gyro DLPF ~41 Hz
+    ok &= write_reg(REG_CONFIG, 0x03);         // DLPF ~41 Hz (gyro; accel too on MPU-6050)
     ok &= write_reg(REG_GYRO_CONFIG, 0x10);    // FS_SEL=2  -> ±1000 dps
     ok &= write_reg(REG_ACCEL_CONFIG, 0x08);   // AFS_SEL=1 -> ±4 g
-    ok &= write_reg(REG_ACCEL_CONFIG2, 0x03);  // accel DLPF ~41 Hz
+    // MPU-6500 family only; the MPU-6050 has no separate accel filter register.
+    if (who != 0x68) ok &= write_reg(REG_ACCEL_CONFIG2, 0x03);  // accel DLPF ~41 Hz
     if (!ok) {
         Serial.println("[IMU] Failed to write configuration registers");
         return false;
