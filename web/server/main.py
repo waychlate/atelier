@@ -1,3 +1,5 @@
+import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -18,6 +20,20 @@ ws_clients: set[WebSocket] = set()
 
 MODEL_PATH = Path(__file__).parent / "model" / "emnist_cnn.pt"
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+
+# Opt-in: set RECORD_DIR to save every incoming packet as JSON, for tuning
+# trajectory reconstruction against real hardware data offline.
+RECORD_DIR = os.environ.get("RECORD_DIR")
+
+
+def record_packet(packet: StrokePacket) -> None:
+    if not RECORD_DIR:
+        return
+    out_dir = Path(RECORD_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{packet.letter}.json"
+    path.write_text(packet.model_dump_json())
+    print(f"Recorded {len(packet.samples)} samples to {path}")
 
 
 @app.on_event("startup")
@@ -113,6 +129,7 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     it. Otherwise (single-stroke letters like M/S, or a mismatched stroke
     count) falls back to the whole-path CNN (scoring.py) on the
     concatenated pen-down samples."""
+    record_packet(packet)
     letter = packet.letter
     stroke_runs = split_by_pen(packet)
 

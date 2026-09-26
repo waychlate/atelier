@@ -14,3 +14,6 @@ __pycache__/
 *.pyc
 
 esp32/include/config.h
+
+# Raw stroke recordings (RECORD_DIR)
+web/server/recordings/
