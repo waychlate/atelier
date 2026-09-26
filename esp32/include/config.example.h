@@ -39,9 +39,9 @@
 // ---------------------------------------------------------------------------
 #define SAMPLE_INTERVAL_MS  20    // 50 Hz
 #define DEBOUNCE_MS         15
-// Hard cap on samples per letter, pen-up gaps included (10 s at 50 Hz), to
+// Hard cap on samples per letter, pen-up gaps included (30 s at 50 Hz), to
 // bound RAM usage. Sampling stops when full; submit to send what was captured.
-#define MAX_LETTER_SAMPLES  500
+#define MAX_LETTER_SAMPLES  1500
 // Letters with fewer pen-down samples than this are treated as accidental
 // taps and not sent.
 #define MIN_PEN_SAMPLES     3
