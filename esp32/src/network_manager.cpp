@@ -1,11 +1,15 @@
 #include "network_manager.h"
 
+#include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
 
 #include "config.h"
 
 namespace {
+
+constexpr const char *STROKE_URL = SERVER_BASE_URL "/stroke";
+constexpr const char *ROUND_URL  = SERVER_BASE_URL "/round/current";
 
 bool wait_for_connection() {
     uint32_t start = millis();
@@ -45,6 +49,37 @@ bool network_ensure_connected() {
     return wait_for_connection();
 }
 
+bool fetch_target_letter(String &letter) {
+    if (!network_ensure_connected()) return false;
+
+    HTTPClient http;
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    if (!http.begin(ROUND_URL)) {
+        Serial.println("[NET] HTTPClient.begin() failed - check SERVER_BASE_URL");
+        return false;
+    }
+
+    int code = http.GET();
+    bool ok = false;
+    if (code == 200) {
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, http.getString());
+        const char *target = doc["target_letter"];
+        if (!err && target) {
+            letter = target;
+            ok = true;
+        } else {
+            Serial.println("[NET] Unexpected /round/current response");
+        }
+    } else {
+        Serial.printf("[NET] GET /round/current failed: %s\n",
+                      code > 0 ? String(code).c_str() : http.errorToString(code).c_str());
+    }
+
+    http.end();
+    return ok;
+}
+
 bool send_stroke_to_server(const String &json_payload) {
     if (!network_ensure_connected()) {
         Serial.println("[NET] Not connected, stroke dropped");
@@ -53,13 +88,13 @@ bool send_stroke_to_server(const String &json_payload) {
 
     HTTPClient http;
     http.setTimeout(HTTP_TIMEOUT_MS);
-    if (!http.begin(SERVER_URL)) {
-        Serial.println("[NET] HTTPClient.begin() failed - check SERVER_URL");
+    if (!http.begin(STROKE_URL)) {
+        Serial.println("[NET] HTTPClient.begin() failed - check SERVER_BASE_URL");
         return false;
     }
     http.addHeader("Content-Type", "application/json");
 
-    Serial.printf("[NET] POST %s (%u bytes)\n", SERVER_URL, json_payload.length());
+    Serial.printf("[NET] POST %s (%u bytes)\n", STROKE_URL, json_payload.length());
     int code = http.POST(json_payload);
 
     bool ok = false;
