@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Air-Writing Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="game">
+    <div class="banner">
+      <span class="label">Draw the letter:</span>
+      <span id="target-letter" class="target-letter">-</span>
+    </div>
+
+    <canvas id="canvas" width="480" height="480"></canvas>
+
+    <div class="stats">
+      <div class="accuracy">
+        <span class="label">Last accuracy:</span>
+        <span id="accuracy">-</span>
+      </div>
+      <div class="score">
+        <span class="label">Score:</span>
+        <span id="cumulative-score">0</span>
+      </div>
+    </div>
+
+    <button id="next-round-btn">Next Round</button>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
