@@ -1,0 +1,14 @@
+# PlatformIO build outputs
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Editor / LSP cache
+.vscode/
+.clangd/
+compile_commands.json
+
+# Python (web/server)
+.venv/
+__pycache__/
+*.pyc
