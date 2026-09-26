@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -13,6 +13,8 @@ from db import TigerStore
 from game_state import GameState
 from models import (
     ESP32FeedbackResponse,
+    LanguageInfo,
+    LanguagesResponse,
     LetterStats,
     RoundStartMessage,
     StatsResponse,
@@ -42,9 +44,11 @@ async def on_startup():
     if config.DATABASE_URL:
         try:
             db = await TigerStore.connect(config.DATABASE_URL)
-            cards, clock = await db.load(game_state.player_id)
-            game_state.load(cards, clock)
-            log.info("Tiger Data connected: %d cards, %d past reviews", len(cards), clock)
+            for lang in config.LANGUAGES:
+                cards, clock = await db.load(game_state.player_id, lang)
+                game_state.load(lang, cards, clock)
+            n = len(game_state.cards_by_language.get(config.DEFAULT_LANGUAGE, {}))
+            log.info("Tiger Data connected: %d cards loaded for %s", n, config.DEFAULT_LANGUAGE)
         except Exception as e:
             db = None
             log.warning("Tiger Data unavailable, running in-memory only: %s", e)
@@ -77,7 +81,9 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         await websocket.send_text(
             RoundStartMessage(
-                round_id=game_state.round_id, target_letter=game_state.target_letter
+                round_id=game_state.round_id,
+                language=game_state.language,
+                target_letter=game_state.target_letter,
             ).model_dump_json()
         )
         while True:
@@ -91,7 +97,9 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/round/current")
 def get_current_round() -> RoundStartMessage:
     return RoundStartMessage(
-        round_id=game_state.round_id, target_letter=game_state.target_letter
+        round_id=game_state.round_id,
+        language=game_state.language,
+        target_letter=game_state.target_letter,
     )
 
 
@@ -110,35 +118,78 @@ async def reset_round() -> RoundStartMessage:
     return msg
 
 
+@app.get("/languages")
+def get_languages() -> LanguagesResponse:
+    return LanguagesResponse(
+        active=game_state.language,
+        languages=[
+            LanguageInfo(code=code, label=lang.label, enabled=lang.enabled, letter_count=len(lang.letters))
+            for code, lang in config.LANGUAGES.items()
+        ],
+    )
+
+
+@app.post("/language/{code}")
+async def set_language(code: str) -> RoundStartMessage:
+    """Switch the active deck. Only enabled languages are playable — see
+    config.Language.enabled (Japanese is plumbing-only for now)."""
+    lang = config.LANGUAGES.get(code)
+    if lang is None:
+        raise HTTPException(404, f"unknown language {code!r}")
+    if not lang.enabled:
+        raise HTTPException(400, f"{code!r} isn't playable yet")
+    msg = game_state.set_language(code)
+    await broadcast(msg)
+    return msg
+
+
 @app.post("/progress/reset")
-async def reset_progress() -> RoundStartMessage:
-    """Wipe SRS cards and attempt history too — start learning from scratch."""
-    game_state.reset_progress()
+async def reset_progress(language: str | None = None) -> RoundStartMessage:
+    """Wipe SRS cards and attempt history for one language (default: the
+    active one) — other languages' decks are untouched."""
+    language = language or game_state.language
+    if language not in config.LANGUAGES:
+        raise HTTPException(404, f"unknown language {language!r}")
+    game_state.reset_progress(language)
     if db:
         try:
-            await db.reset_player(game_state.player_id)
+            await db.reset_player(game_state.player_id, language)
         except Exception as e:
             log.warning("Tiger Data reset failed: %s", e)
+
+    if language != game_state.language:
+        # Reset a deck that isn't being played right now — nothing about
+        # the live round changes, so there's nothing new to broadcast.
+        return RoundStartMessage(
+            round_id=game_state.round_id, language=game_state.language,
+            target_letter=game_state.target_letter,
+        )
     msg = game_state.start_game()
     await broadcast(msg)
     return msg
 
 
 @app.get("/stats")
-async def get_stats() -> StatsResponse:
+async def get_stats(language: str | None = None) -> StatsResponse:
+    language = language or game_state.language
+    if language not in config.LANGUAGES:
+        raise HTTPException(404, f"unknown language {language!r}")
+
     source = "local"
-    letter_aggs, timeline = game_state.local_stats()
+    letter_aggs, timeline = game_state.local_stats(language)
     if db:
         try:
-            letter_aggs, timeline = await db.stats(game_state.player_id)
+            letter_aggs, timeline = await db.stats(game_state.player_id, language)
             source = "tiger"
         except Exception as e:
             log.warning("Tiger Data stats failed, using local: %s", e)
 
+    cards = game_state.cards_by_language.get(language, {})
+    clock = game_state.clock_by_language.get(language, 0)
     letters = []
-    for letter in config.DEMO_LETTERS:
+    for letter in config.LANGUAGES[language].letters:
         agg = letter_aggs.get(letter, {})
-        card = game_state.cards.get(letter)
+        card = cards.get(letter)
         letters.append(
             LetterStats(
                 letter=letter,
@@ -148,14 +199,15 @@ async def get_stats() -> StatsResponse:
                 best_score=agg.get("best_score"),
                 recent=agg.get("recent", []),
                 ease=card.ease if card else None,
-                due_in=card.due - game_state.clock if card else None,
+                due_in=card.due - clock if card else None,
                 lapses=card.lapses if card else 0,
             )
         )
     return StatsResponse(
         player_id=game_state.player_id,
+        language=language,
         source=source,
-        total_reviews=game_state.clock,
+        total_reviews=clock,
         letters=letters,
         timeline=timeline,
     )
@@ -194,7 +246,8 @@ async def _persist_and_broadcast(
     if db:
         try:
             await db.record(
-                game_state.player_id, result.letter, result.accuracy, per_stroke_scores, mode, card
+                game_state.player_id, result.language, result.letter, result.accuracy,
+                per_stroke_scores, mode, card,
             )
         except Exception as e:
             log.warning("Tiger Data write failed (attempt kept in memory): %s", e)

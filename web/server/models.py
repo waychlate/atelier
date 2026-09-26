@@ -31,12 +31,14 @@ class StrokePacket(BaseModel):
 class RoundStartMessage(BaseModel):
     type: Literal["round_start"] = "round_start"
     round_id: int
+    language: str
     target_letter: str
 
 
 class StrokeResultMessage(BaseModel):
     type: Literal["stroke_result"] = "stroke_result"
     round_id: int
+    language: str
     letter: str
     accuracy: float
     grade: Literal["again", "hard", "good", "easy"]
@@ -74,7 +76,20 @@ class TimelinePoint(BaseModel):
 
 class StatsResponse(BaseModel):
     player_id: str
+    language: str
     source: Literal["tiger", "local"]
     total_reviews: int
     letters: list[LetterStats]
     timeline: list[TimelinePoint]
+
+
+class LanguageInfo(BaseModel):
+    code: str
+    label: str
+    enabled: bool
+    letter_count: int
+
+
+class LanguagesResponse(BaseModel):
+    active: str
+    languages: list[LanguageInfo]
