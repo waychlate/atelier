@@ -72,7 +72,11 @@ def reconstruct_path(
     ay = np.array([s.ay for s in samples], dtype=float)
 
     x = _reconstruct_axis(ax, dt)
-    y = _reconstruct_axis(ay, dt)
+    # Sign flip confirmed against real hardware: with the wand held for
+    # writing, +ay corresponds to physical downward motion, but the rest of
+    # the pipeline (rasterize.py, app.js) treats +y as up. Without this the
+    # whole reconstructed path renders vertically mirrored.
+    y = -_reconstruct_axis(ay, dt)
 
     x = x - np.mean(x)
     y = y - np.mean(y)
