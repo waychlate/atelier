@@ -71,7 +71,9 @@ void finish_stroke() {
     }
 
     JsonDocument doc;
-    doc["user_id"] = USER_ID;
+    doc["player_id"] = PLAYER_ID;
+    doc["letter"] = TARGET_LETTER;
+    doc["sample_rate_hz"] = 1000 / SAMPLE_INTERVAL_MS;
     JsonArray samples = doc["samples"].to<JsonArray>();
     for (const ImuSample &s : stroke_buffer) {
         JsonObject o = samples.add<JsonObject>();

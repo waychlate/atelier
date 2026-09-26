@@ -7,9 +7,14 @@
 #define WIFI_PASSWORD  "YOUR_HOTSPOT_PASSWORD"
 
 // Full URL of the stroke endpoint on the teammate's server.
-#define SERVER_URL     "http://192.168.1.100:8000/api/stroke"
+#define SERVER_URL     "http://192.168.1.100:8000/stroke"
 
-#define USER_ID        "player_1"
+#define PLAYER_ID      "player_1"
+
+// Which letter to attempt each stroke. TODO: replace with a GET to
+// /round/current once the round-fetching flow is wired up; hardcoded for now
+// so end-to-end scoring can be tested.
+#define TARGET_LETTER  "A"
 
 // How long to wait for Wi-Fi on boot / reconnect before giving up (ms).
 #define WIFI_CONNECT_TIMEOUT_MS  15000
