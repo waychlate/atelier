@@ -27,12 +27,6 @@ body {
   color: #4fc3f7;
 }
 
-.stroke-progress {
-  font-size: 0.95rem;
-  color: #888;
-  min-height: 1.2em;
-}
-
 .canvas-wrap {
   position: relative;
 }

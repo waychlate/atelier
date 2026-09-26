@@ -9,15 +9,17 @@ error-prone complexity for no real payoff here.
 
 import numpy as np
 
-from models import StrokePacket
+from models import StrokeSample
 
 
-def _dt_array(packet: StrokePacket) -> np.ndarray:
-    t = np.array([s.t for s in packet.samples], dtype=float)
+def _dt_array(samples: list[StrokeSample], sample_rate_hz: int) -> np.ndarray:
+    # t is milliseconds since the letter started (firmware: uint32_t) — the
+    # rest of this module works in seconds, so convert.
+    t = np.array([s.t for s in samples], dtype=float)
     if len(t) > 1 and np.any(np.diff(t) > 0):
-        return np.diff(t)
-    dt = 1.0 / packet.sample_rate_hz
-    return np.full(len(packet.samples) - 1, dt)
+        return np.diff(t) / 1000.0
+    dt = 1.0 / sample_rate_hz
+    return np.full(len(samples) - 1, dt)
 
 
 def _cumulative_trapz(series: np.ndarray, dt: np.ndarray) -> np.ndarray:
@@ -47,7 +49,7 @@ def remove_drift(velocity: np.ndarray) -> np.ndarray:
     return velocity - ramp
 
 
-def apply_gyro_correction(packet: StrokePacket) -> None:
+def apply_gyro_correction(samples: list[StrokeSample]) -> None:
     """Stub: rotation-drift correction using gx/gy/gz, if the raw-axis
     reconstruction below ever proves visually unusable. Not wired into the
     default pipeline — gyro remains an optional input the pipeline never
@@ -62,10 +64,12 @@ def _reconstruct_axis(accel: np.ndarray, dt: np.ndarray) -> np.ndarray:
     return position
 
 
-def reconstruct_path(packet: StrokePacket) -> list[tuple[float, float]]:
-    dt = _dt_array(packet)
-    ax = np.array([s.ax for s in packet.samples], dtype=float)
-    ay = np.array([s.ay for s in packet.samples], dtype=float)
+def reconstruct_path(
+    samples: list[StrokeSample], sample_rate_hz: int
+) -> list[tuple[float, float]]:
+    dt = _dt_array(samples, sample_rate_hz)
+    ax = np.array([s.ax for s in samples], dtype=float)
+    ay = np.array([s.ay for s in samples], dtype=float)
 
     x = _reconstruct_axis(ax, dt)
     y = _reconstruct_axis(ay, dt)

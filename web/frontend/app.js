@@ -5,7 +5,6 @@ const nextRoundBtn = document.getElementById("next-round-btn");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const hintImage = document.getElementById("hint-image");
-const strokeProgressEl = document.getElementById("stroke-progress");
 const perStrokeScoresEl = document.getElementById("per-stroke-scores");
 
 const HINT_TIMEOUT_MS = 5000;
@@ -71,10 +70,6 @@ function drawPaths(paths) {
   }
 }
 
-function updateStrokeProgress(index, total) {
-  strokeProgressEl.textContent = total > 1 ? `Stroke ${index} of ${total} drawn` : "";
-}
-
 function updatePerStrokeScores(scores) {
   perStrokeScoresEl.innerHTML = "";
   if (!scores) return;
@@ -97,11 +92,7 @@ function connect() {
       currentLetter = msg.target_letter;
       targetLetterEl.textContent = msg.target_letter;
       clearCanvas();
-      strokeProgressEl.textContent = "";
       perStrokeScoresEl.innerHTML = "";
-      scheduleHint();
-    } else if (msg.type === "stroke_received") {
-      updateStrokeProgress(msg.stroke_index, msg.expected_total);
       scheduleHint();
     } else if (msg.type === "stroke_result") {
       if (hintTimer) clearTimeout(hintTimer);
@@ -110,7 +101,6 @@ function connect() {
       cumulativeScoreEl.textContent = msg.cumulative_score;
       currentLetter = msg.next_letter;
       targetLetterEl.textContent = msg.next_letter;
-      strokeProgressEl.textContent = "";
       updatePerStrokeScores(msg.per_stroke_scores);
       drawPaths(msg.paths);
       scheduleHint();

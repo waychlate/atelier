@@ -4,16 +4,23 @@ from pydantic import BaseModel
 
 
 class StrokeSample(BaseModel):
-    t: float
+    t: float  # milliseconds since the letter started (firmware: uint32_t)
     ax: float
     ay: float
     az: float
     gx: Optional[float] = None
     gy: Optional[float] = None
     gz: Optional[float] = None
+    pen: bool = True  # was the pen button held at this sample (mid-stroke vs. gap)
 
 
 class StrokePacket(BaseModel):
+    """One HTTP POST covers a whole letter, not a single stroke — the
+    firmware buffers from first pen-down to the submit button press and
+    sends everything in one shot, pen-up gaps between strokes included.
+    Individual strokes are recovered server-side by splitting on `pen`
+    (see main.py's split_by_pen)."""
+
     player_id: str = "player"
     letter: str
     sample_rate_hz: int
@@ -34,22 +41,6 @@ class StrokeResultMessage(BaseModel):
     paths: list[list[tuple[float, float]]]  # one per submitted stroke, positioned for display
     per_stroke_scores: Optional[list[float]] = None  # only for strict multi-stroke letters
     next_letter: str
-
-
-class StrokeReceivedMessage(BaseModel):
-    type: Literal["stroke_received"] = "stroke_received"
-    stroke_index: int
-    expected_total: int
-
-
-class StrokeAckResponse(BaseModel):
-    """Lightweight response to POST /stroke (button 1: hold-to-draw,
-    release-to-send) — just an ack for the ESP32 to flash a "received"
-    LED. Scoring only happens on POST /submit (button 2)."""
-
-    received: bool = True
-    stroke_index: int
-    expected_total: int
 
 
 class ESP32FeedbackResponse(BaseModel):

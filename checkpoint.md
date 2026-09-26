@@ -21,12 +21,11 @@ fresh session doesn't have to re-derive it from conversation history.
   compensation. Deliberate tradeoff (see `trajectory.py`'s docstring) — fine as long as
   reconstructed paths look recognizable; revisit only if real hardware data looks warped.
 - **Implemented: stroke-by-stroke recognition** with strict stroke order/direction
-  enforcement (e.g. T = horizontal bar left→right, then vertical stem top→bottom), plus a
-  **two-button hardware design**: button 1 = hold-to-draw/release-to-send one stroke
-  (`POST /stroke`, buffers only, no scoring), button 2 = submit once all strokes for the
-  letter are drawn (`POST /submit`, scores + advances the round). **This is a data-contract
-  change the teammate's firmware needs to implement** (second button/gesture) — not yet
-  confirmed with them.
+  enforcement (e.g. T = vertical stem top-to-bottom, then horizontal bar left→right), plus
+  a **two-button design**: pen button (hold-to-draw/release-to-pause between strokes) and
+  submit button (finalize). **The teammate independently built this on a `firmware`
+  branch** (`origin/firmware`, esp32/ dir merged into this working tree) — see the next
+  section for the real contract, which differs from what was first assumed here.
   - Canonical per-letter stroke definitions (order, direction, control points for
     rendering) live in `strokes.py` — single source of truth for both validation and the
     reference-hint images, so they can never drift out of sync.
@@ -47,13 +46,50 @@ fresh session doesn't have to re-derive it from conversation history.
   5s of no stroke activity (`app.js`'s `scheduleHint`, reset on every `stroke_received` WS
   event, not just round start).
 
+## Real firmware contract (discovered from `origin/firmware`, esp32/ now merged in)
+
+This superseded the two-button design's original assumption of one `POST /stroke` per
+stroke plus a separate `POST /submit`. **The actual firmware sends the whole letter in
+one HTTP POST**: the pen button (GPIO 4) and submit button (GPIO 18) are both handled
+device-side — the ESP32 buffers every sample from first pen-down until submit is pressed
+(pen-up gaps between strokes included, each sample tagged `pen: 0/1`), and only then does
+one `POST /stroke` with everything. There is no `/submit` endpoint. `GET /round/current`
+matches what was already built. Adjusted to match:
+
+- `models.StrokeSample` gained a `pen: bool` field. `t` is **milliseconds since the letter
+  started** (firmware: `uint32_t`), not seconds — `trajectory._dt_array` now converts
+  (`np.diff(t) / 1000.0`); this was a real bug (1000x integration error) caught before any
+  real hardware data hit it. Sample rate is 50 Hz (`SAMPLE_INTERVAL_MS=20` in
+  `esp32/include/config.example.h`), not the 100 Hz originally assumed — doesn't matter
+  much since reconstruction prefers real `t` diffs when available, but `t` really does need
+  to be trusted now that it's not synthetic.
+- `main.py`'s `split_by_pen()` splits one incoming packet into per-stroke sample runs
+  (contiguous `pen=True` stretches); `pen=False` samples are dropped. `game_state.py` no
+  longer buffers anything cross-request — the whole letter arrives atomically, so scoring
+  and round-advance both happen inside the single `/stroke` handler now.
+- Lost capability: the frontend's live "stroke N of M drawn" progress + per-stroke
+  hint-timer-reset don't make sense anymore — the server has zero visibility until the
+  whole letter arrives in one shot. Removed that UI; the hint timer now only resets on
+  `round_start`.
+- `scripts/simulate_stroke.py` rewritten to build one whole-letter packet (strokes + short
+  pen=False gap segments in between, 50 Hz, millisecond `t`) and POST it once — matches
+  the real firmware shape. Re-verified end-to-end: all 7 demo letters score well; wrong
+  order/rotation still correctly reject; reconstruction scale confirmed sane (unit-square
+  range, not 1000x blown up) after the ms fix.
+- **Not yet done**: no physical ESP32/platformio available in this environment to actually
+  flash and test — everything above is verified via the updated simulator standing in for
+  real hardware. First real on-device test should double check the `pen` semantics
+  (esp32/src/main.cpp drops the trailing pen-up tail before sending, but a leading tail
+  before the first pen-down shouldn't exist since buffering starts exactly at first
+  pen-down) and confirm real accelerometer noise doesn't break `split_by_pen`'s run
+  detection (e.g. debounce chatter producing spurious 1-sample runs).
+
 ## Current implementation state (web/server/, web/frontend/)
 
 - `models.py`, `game_state.py`, `main.py`, `trajectory.py` — as described above, working.
-  `game_state.py` now buffers strokes (`pending_strokes`) across the round instead of
-  scoring on every `/stroke` call; `trajectory.place_in_bbox` repositions each
-  independently-reconstructed multi-stroke submission into its canonical slot for display
-  (true relative position isn't recoverable from separate accel recordings anyway).
+  `trajectory.place_in_bbox` repositions each independently-reconstructed multi-stroke
+  submission into its canonical slot for display (true relative position isn't recoverable
+  from separate accel recordings anyway).
 - `strokes.py` — canonical per-letter stroke definitions + direction validation.
 - `generate_reference_images.py` — one-time script, renders `web/frontend/reference/*.png`.
 - `rasterize.py` — path → 28x28 image for the CNN.
@@ -72,13 +108,12 @@ fresh session doesn't have to re-derive it from conversation history.
 
 ## Open questions / not yet decided
 
-- **Two-button hardware change needs teammate firmware coordination — not yet confirmed.**
-  Until then, `scripts/simulate_stroke.py` (updated for the new POST /stroke + POST
-  /submit flow) is the only way to test this end-to-end.
-- Stroke-order choices for A/H/E (T's order was given directly by the user: horizontal
-  bar then vertical stem, top-to-bottom) are my best-guess standard block-letter order —
-  worth a quick sanity check against how the user actually wants to teach them, since
-  they're easy to tweak in `strokes.py` (just data) but do need real-hand testing.
+- Stroke-order choices for A/H/E (T's order was given directly by the user: vertical stem
+  top-to-bottom, then horizontal bar) are my best-guess standard block-letter order — worth
+  a quick sanity check against how the user actually wants to teach them, since they're
+  easy to tweak in `strokes.py` (just data) but do need real-hand testing.
+- First real on-device test is still pending (no hardware in this environment) — see the
+  "Not yet done" note above.
 - S's whole-path CNN score is the weakest of the demo set (~61-67 for a clean synthetic
   draw) — worth testing with a real ESP32 draw specifically.
 - **G added** (circle bowl + straight descender, counterclockwise) as the first
