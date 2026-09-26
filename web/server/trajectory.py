@@ -62,15 +62,42 @@ def _reconstruct_axis(accel: np.ndarray, dt: np.ndarray) -> np.ndarray:
     return position
 
 
-def reconstruct_path(packet: StrokePacket) -> list[tuple[float, float]]:
+def _split_into_strokes(
+    x: np.ndarray, y: np.ndarray, pen: np.ndarray
+) -> list[list[tuple[float, float]]]:
+    """Groups consecutive pen-down points into separate strokes.
+
+    Pen-up points still went into the integration above (so a stroke lands
+    in the right place relative to the ones before it), but they're dropped
+    here rather than drawn — otherwise every stroke in a letter renders as
+    one continuous scribble through the movements between them.
+    """
+    strokes: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    for xi, yi, is_pen in zip(x, y, pen):
+        if is_pen:
+            current.append((float(xi), float(yi)))
+        elif current:
+            strokes.append(current)
+            current = []
+    if current:
+        strokes.append(current)
+    return strokes
+
+
+def reconstruct_path(packet: StrokePacket) -> list[list[tuple[float, float]]]:
     dt = _dt_array(packet)
     ax = np.array([s.ax for s in packet.samples], dtype=float)
     ay = np.array([s.ay for s in packet.samples], dtype=float)
+    pen = np.array([s.pen for s in packet.samples], dtype=bool)
 
     x = _reconstruct_axis(ax, dt)
     y = _reconstruct_axis(ay, dt)
 
-    x = x - np.mean(x)
-    y = y - np.mean(y)
+    # Center on the pen-down points only, so pen-up travel (e.g. reaching
+    # over to the far side of a letter) doesn't skew where it sits on screen.
+    if pen.any():
+        x = x - np.mean(x[pen])
+        y = y - np.mean(y[pen])
 
-    return list(zip(x.tolist(), y.tolist()))
+    return _split_into_strokes(x, y, pen)

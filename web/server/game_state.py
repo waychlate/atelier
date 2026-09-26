@@ -32,7 +32,7 @@ class GameState:
         return RoundStartMessage(round_id=self.round_id, target_letter=self.target_letter)
 
     def submit_stroke(
-        self, packet: StrokePacket, accuracy: float, path: list[tuple[float, float]]
+        self, packet: StrokePacket, accuracy: float, path: list[list[tuple[float, float]]]
     ) -> StrokeResultMessage:
         """Record a stroke submission, update cumulative score, advance to next letter."""
         self.cumulative_score += int(accuracy)

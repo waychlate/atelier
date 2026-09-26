@@ -9,12 +9,17 @@ function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-function drawPath(path) {
+// `strokes` is a list of strokes, each a list of [x, y] points (pen-up gaps
+// between strokes are already dropped server-side — see trajectory.py).
+function drawPath(strokes) {
   clearCanvas();
-  if (!path || path.length === 0) return;
+  if (!strokes || strokes.length === 0) return;
 
-  const xs = path.map((p) => p[0]);
-  const ys = path.map((p) => p[1]);
+  const allPoints = strokes.flat();
+  if (allPoints.length === 0) return;
+
+  const xs = allPoints.map((p) => p[0]);
+  const ys = allPoints.map((p) => p[1]);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -36,13 +41,19 @@ function drawPath(path) {
   ctx.lineWidth = 3;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.beginPath();
-  path.forEach((point, i) => {
-    const [cx, cy] = toCanvas(point);
-    if (i === 0) ctx.moveTo(cx, cy);
-    else ctx.lineTo(cx, cy);
+
+  // Separate beginPath()/stroke() per stroke so the pen-up jump between
+  // strokes never draws a connecting line.
+  strokes.forEach((stroke) => {
+    if (stroke.length === 0) return;
+    ctx.beginPath();
+    stroke.forEach((point, i) => {
+      const [cx, cy] = toCanvas(point);
+      if (i === 0) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    });
+    ctx.stroke();
   });
-  ctx.stroke();
 }
 
 function connect() {

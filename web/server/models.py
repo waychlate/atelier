@@ -11,6 +11,9 @@ class StrokeSample(BaseModel):
     gx: Optional[float] = None
     gy: Optional[float] = None
     gz: Optional[float] = None
+    # True while the pen button was held for this sample. Defaults to True so
+    # older clients that never send it (one sample = one stroke) still work.
+    pen: bool = True
 
 
 class StrokePacket(BaseModel):
@@ -31,7 +34,9 @@ class StrokeResultMessage(BaseModel):
     round_id: int
     accuracy: float
     cumulative_score: int
-    path: list[tuple[float, float]]
+    # One point list per stroke (pen-up gaps are not drawn), so the frontend
+    # can render each stroke as its own line instead of one continuous path.
+    path: list[list[tuple[float, float]]]
     next_letter: str
 
 
