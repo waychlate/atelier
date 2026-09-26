@@ -74,3 +74,28 @@ def reconstruct_path(packet: StrokePacket) -> list[tuple[float, float]]:
     y = y - np.mean(y)
 
     return list(zip(x.tolist(), y.tolist()))
+
+
+def place_in_bbox(
+    path: list[tuple[float, float]],
+    target_bbox: tuple[tuple[float, float], tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Rescale/reposition an independently-reconstructed (mean-centered)
+    stroke path to fit a target bounding box. Used to lay out multi-stroke
+    submissions into their canonical slot for display — separate
+    accelerometer recordings (one per button press) have no shared absolute
+    position reference, so true relative placement can't be recovered from
+    the IMU data alone; this shows each stroke's *shape* in its *expected*
+    position instead."""
+    if not path:
+        return path
+    xs = [p[0] for p in path]
+    ys = [p[1] for p in path]
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-6)
+
+    (tx0, ty0), (tx1, ty1) = target_bbox
+    target_span = max(tx1 - tx0, ty1 - ty0, 1e-6)
+    scale = target_span / span
+    tcx, tcy = (tx0 + tx1) / 2, (ty0 + ty1) / 2
+
+    return [(tcx + x * scale, tcy + y * scale) for x, y in path]

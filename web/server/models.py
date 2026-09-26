@@ -31,8 +31,25 @@ class StrokeResultMessage(BaseModel):
     round_id: int
     accuracy: float
     cumulative_score: int
-    path: list[tuple[float, float]]
+    paths: list[list[tuple[float, float]]]  # one per submitted stroke, positioned for display
+    per_stroke_scores: Optional[list[float]] = None  # only for strict multi-stroke letters
     next_letter: str
+
+
+class StrokeReceivedMessage(BaseModel):
+    type: Literal["stroke_received"] = "stroke_received"
+    stroke_index: int
+    expected_total: int
+
+
+class StrokeAckResponse(BaseModel):
+    """Lightweight response to POST /stroke (button 1: hold-to-draw,
+    release-to-send) — just an ack for the ESP32 to flash a "received"
+    LED. Scoring only happens on POST /submit (button 2)."""
+
+    received: bool = True
+    stroke_index: int
+    expected_total: int
 
 
 class ESP32FeedbackResponse(BaseModel):

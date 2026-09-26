@@ -4,17 +4,40 @@ const cumulativeScoreEl = document.getElementById("cumulative-score");
 const nextRoundBtn = document.getElementById("next-round-btn");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const hintImage = document.getElementById("hint-image");
+const strokeProgressEl = document.getElementById("stroke-progress");
+const perStrokeScoresEl = document.getElementById("per-stroke-scores");
+
+const HINT_TIMEOUT_MS = 5000;
+let hintTimer = null;
+let currentLetter = null;
 
 function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
-function drawPath(path) {
-  clearCanvas();
-  if (!path || path.length === 0) return;
+function hideHint() {
+  hintImage.classList.add("hidden");
+}
 
-  const xs = path.map((p) => p[0]);
-  const ys = path.map((p) => p[1]);
+function scheduleHint() {
+  if (hintTimer) clearTimeout(hintTimer);
+  hideHint();
+  hintTimer = setTimeout(() => {
+    if (currentLetter) {
+      hintImage.src = `reference/${currentLetter}.png`;
+      hintImage.classList.remove("hidden");
+    }
+  }, HINT_TIMEOUT_MS);
+}
+
+function drawPaths(paths) {
+  clearCanvas();
+  if (!paths || paths.length === 0) return;
+
+  const allPoints = paths.flat();
+  const xs = allPoints.map((p) => p[0]);
+  const ys = allPoints.map((p) => p[1]);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -36,13 +59,31 @@ function drawPath(path) {
   ctx.lineWidth = 3;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.beginPath();
-  path.forEach((point, i) => {
-    const [cx, cy] = toCanvas(point);
-    if (i === 0) ctx.moveTo(cx, cy);
-    else ctx.lineTo(cx, cy);
+
+  for (const path of paths) {
+    ctx.beginPath();
+    path.forEach((point, i) => {
+      const [cx, cy] = toCanvas(point);
+      if (i === 0) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    });
+    ctx.stroke();
+  }
+}
+
+function updateStrokeProgress(index, total) {
+  strokeProgressEl.textContent = total > 1 ? `Stroke ${index} of ${total} drawn` : "";
+}
+
+function updatePerStrokeScores(scores) {
+  perStrokeScoresEl.innerHTML = "";
+  if (!scores) return;
+  scores.forEach((score, i) => {
+    const span = document.createElement("span");
+    span.textContent = `#${i + 1}: ${score.toFixed(0)}`;
+    span.className = score > 0 ? "pass" : "fail";
+    perStrokeScoresEl.appendChild(span);
   });
-  ctx.stroke();
 }
 
 function connect() {
@@ -53,13 +94,26 @@ function connect() {
     const msg = JSON.parse(event.data);
 
     if (msg.type === "round_start") {
+      currentLetter = msg.target_letter;
       targetLetterEl.textContent = msg.target_letter;
       clearCanvas();
+      strokeProgressEl.textContent = "";
+      perStrokeScoresEl.innerHTML = "";
+      scheduleHint();
+    } else if (msg.type === "stroke_received") {
+      updateStrokeProgress(msg.stroke_index, msg.expected_total);
+      scheduleHint();
     } else if (msg.type === "stroke_result") {
+      if (hintTimer) clearTimeout(hintTimer);
+      hideHint();
       accuracyEl.textContent = msg.accuracy.toFixed(1);
       cumulativeScoreEl.textContent = msg.cumulative_score;
+      currentLetter = msg.next_letter;
       targetLetterEl.textContent = msg.next_letter;
-      drawPath(msg.path);
+      strokeProgressEl.textContent = "";
+      updatePerStrokeScores(msg.per_stroke_scores);
+      drawPaths(msg.paths);
+      scheduleHint();
     }
   };
 

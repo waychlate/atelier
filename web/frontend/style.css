@@ -27,10 +27,52 @@ body {
   color: #4fc3f7;
 }
 
+.stroke-progress {
+  font-size: 0.95rem;
+  color: #888;
+  min-height: 1.2em;
+}
+
+.canvas-wrap {
+  position: relative;
+}
+
 canvas {
   background: #1c1c1c;
   border: 2px solid #333;
   border-radius: 8px;
+}
+
+.hint-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 480px;
+  height: 480px;
+  border-radius: 8px;
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.hint-image.hidden {
+  opacity: 0;
+}
+
+.per-stroke-scores {
+  display: flex;
+  gap: 10px;
+  font-size: 0.95rem;
+  color: #aaa;
+  min-height: 1.2em;
+}
+
+.per-stroke-scores .fail {
+  color: #ef5350;
+}
+
+.per-stroke-scores .pass {
+  color: #4fc3f7;
 }
 
 .stats {
