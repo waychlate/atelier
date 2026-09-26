@@ -1,15 +1,37 @@
-"""Path reconstruction for display only — not used for scoring (see scoring.py).
+"""2D path reconstruction from IMU samples.
 
-We reconstruct a rough 2D path directly from the device-frame ax/ay axes, with no
-orientation/gravity compensation: the device is held in a roughly fixed writing
-posture for a demo, and the spec only needs the path to be "recognizable" on
-screen, not metrically accurate. Full orientation estimation would add
-error-prone complexity for no real payoff here.
+Two methods:
+
+- reconstruct_pointer_path (used whenever gyro data is present): treats the
+  wand as a laser pointer. Recorded hardware data shows players draw almost
+  entirely by rotating the wand — total acceleration stays within ~1 m/s^2
+  of gravity during a stroke — so the drawing is where the wand points, not
+  where the hand moves. Orientation comes from integrating the gyro, pulled
+  toward the accelerometer's gravity reading to cancel gyro drift (a
+  Mahony-style complementary filter); the path is the pointing axis's
+  azimuth/elevation.
+- reconstruct_path (fallback without gyro): double-integrates device-frame
+  ax/ay with no orientation compensation. On real recordings this mostly
+  picks up gravity shifting between axes as the wand tilts, which works for
+  straight strokes but badly distorts curvy ones (S, M).
 """
+
+import math
 
 import numpy as np
 
 from models import StrokeSample
+
+# The IMU axis that points along the wand, in the chip's own frame. Measured
+# on the current wand (board flat, z up, wand along +y) by drawing a
+# horizontal and a vertical calibration line. A wand with the chip mounted
+# differently needs this changed.
+POINTING_AXIS = np.array([0.0, 1.0, 0.0])
+
+# How hard the filter pulls the gyro-integrated orientation toward the
+# accelerometer's gravity direction (rad/s per unit error). Higher trusts
+# the accelerometer more: less drift, more jitter from hand acceleration.
+FILTER_GAIN = 1.0
 
 
 def _dt_array(samples: list[StrokeSample], sample_rate_hz: int) -> np.ndarray:
@@ -49,12 +71,79 @@ def remove_drift(velocity: np.ndarray) -> np.ndarray:
     return velocity - ramp
 
 
-def apply_gyro_correction(samples: list[StrokeSample]) -> None:
-    """Stub: rotation-drift correction using gx/gy/gz, if the raw-axis
-    reconstruction below ever proves visually unusable. Not wired into the
-    default pipeline — gyro remains an optional input the pipeline never
-    requires, per the data contract's "degrade gracefully without gyro"."""
-    return None
+def has_gyro(samples: list[StrokeSample]) -> bool:
+    return bool(samples) and all(
+        s.gx is not None and s.gy is not None and s.gz is not None for s in samples
+    )
+
+
+def _skew(v: np.ndarray) -> np.ndarray:
+    return np.array([[0.0, -v[2], v[1]], [v[2], 0.0, -v[0]], [-v[1], v[0], 0.0]])
+
+
+def _rotation_step(omega: np.ndarray, dt: float) -> np.ndarray:
+    """Rotation matrix for turning at body rate `omega` (rad/s) for `dt` s."""
+    rate = float(np.linalg.norm(omega))
+    if rate * dt < 1e-12:
+        return np.eye(3)
+    k = _skew(omega / rate)
+    angle = rate * dt
+    return np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * (k @ k)
+
+
+def _initial_attitude(accel: np.ndarray) -> np.ndarray:
+    """Body->world rotation that puts measured gravity on world +z (heading
+    is arbitrary: the path is re-centered, so only relative azimuth matters)."""
+    g = accel / np.linalg.norm(accel)
+    up = np.array([0.0, 0.0, 1.0])
+    axis = np.cross(g, up)
+    cos = float(g @ up)
+    if np.linalg.norm(axis) < 1e-9:
+        return np.eye(3) if cos > 0 else np.diag([1.0, -1.0, -1.0])
+    k = _skew(axis)
+    return np.eye(3) + k + (k @ k) / (1 + cos)
+
+
+def reconstruct_pointer_path(
+    samples: list[StrokeSample], sample_rate_hz: int
+) -> list[tuple[float, float]]:
+    """One (azimuth, elevation) point in radians per sample, pen-up samples
+    included, so strokes keep their real positions relative to each other.
+    x grows to the right and y grows up, like reconstruct_path. Not centered."""
+    dt = _dt_array(samples, sample_rate_hz)
+    accel = np.array([[s.ax, s.ay, s.az] for s in samples], dtype=float)
+    gyro = np.radians(np.array([[s.gx, s.gy, s.gz] for s in samples], dtype=float))
+    up = np.array([0.0, 0.0, 1.0])
+
+    # Assumes the wand is roughly still at first pen-down; a small error here
+    # is corrected by the filter within a second or so.
+    rotation = _initial_attitude(accel[: min(5, len(accel))].mean(axis=0))
+
+    points = []
+    for i in range(len(samples)):
+        if i > 0:
+            omega = (gyro[i - 1] + gyro[i]) / 2.0
+            norm = np.linalg.norm(accel[i])
+            if norm > 0:
+                expected_gravity = rotation.T @ up
+                omega = omega + FILTER_GAIN * np.cross(accel[i] / norm, expected_gravity)
+            rotation = rotation @ _rotation_step(omega, dt[i - 1])
+        pointing = rotation @ POINTING_AXIS
+        azimuth = math.atan2(pointing[0], pointing[1])
+        elevation = math.asin(max(-1.0, min(1.0, float(pointing[2]))))
+        points.append((azimuth, elevation))
+
+    # Keep azimuth continuous if the wand swings past +-180 degrees.
+    azimuths = np.unwrap([p[0] for p in points])
+    return [(float(a), p[1]) for a, p in zip(azimuths, points)]
+
+
+def center(path: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    if not path:
+        return path
+    mx = sum(p[0] for p in path) / len(path)
+    my = sum(p[1] for p in path) / len(path)
+    return [(x - mx, y - my) for x, y in path]
 
 
 def _reconstruct_axis(accel: np.ndarray, dt: np.ndarray) -> np.ndarray:

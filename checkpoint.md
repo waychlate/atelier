@@ -13,13 +13,26 @@ fresh session doesn't have to re-derive it from conversation history.
   eduroam (enterprise auth), so the plan is a phone hotspot at the venue — no code impact,
   current HTTP POST contract is unchanged.
 - **Scoring**: switched from DTW-vs-templates to an **image classifier**. Reconstructed
-  path (`trajectory.py`, double-integration + drift correction — unchanged from spec) gets
+  path (`trajectory.py`) gets
   rasterized to a 28x28 image and classified by a small CNN trained on EMNIST letters.
   Score = softmax probability of the target letter × 100. DTW/fastdtw and the old
   `templates/` directory are gone.
-- **Gyro is unused.** Trajectory reconstruction uses raw `ax/ay` only, no orientation
-  compensation. Deliberate tradeoff (see `trajectory.py`'s docstring) — fine as long as
-  reconstructed paths look recognizable; revisit only if real hardware data looks warped.
+- **Path reconstruction uses gyro + accel (laser-pointer model).** Real hardware
+  recordings showed players draw by *rotating* the wand — total acceleration stays within
+  ~1 m/s² of gravity — so the old accel double-integration was mostly measuring gravity
+  shifting between axes as the wand tilted: fine for straight strokes, badly distorted
+  S/M. `trajectory.reconstruct_pointer_path` now tracks orientation (gyro integration
+  corrected toward the accelerometer's gravity reading, Mahony-style) and draws where the
+  wand points. It runs over the whole letter, pen-up gaps included, so strokes keep their
+  real relative positions. Replaying 18 real recordings through `/stroke`: mean score
+  34.5 → 54.6 (e.g. S 0 → 91.7, M 43.7 → 99.5). Mounting matters: `POINTING_AXIS` in
+  `trajectory.py` was measured with calibration strokes (chip flat, wand along +y); a
+  differently mounted chip needs it changed. Accel-only `reconstruct_path` remains as the
+  fallback for packets without gyro.
+- **Raw recordings**: start the server with `RECORD_DIR=recordings` to save every
+  `/stroke` packet as JSON (gitignored) for offline tuning.
+- `scripts/simulate_stroke.py` synthesizes pointer-model data (gyro + gravity tilt)
+  matching real hardware; `--no-gyro` exercises the accel fallback.
 - **Implemented: stroke-by-stroke recognition** with strict stroke order/direction
   enforcement (e.g. T = vertical stem top-to-bottom, then horizontal bar left→right), plus
   a **two-button design**: pen button (hold-to-draw/release-to-pause between strokes) and

@@ -111,6 +111,25 @@ def split_by_pen(packet: StrokePacket) -> list[list[StrokeSample]]:
     return runs
 
 
+def pointer_strokes(packet: StrokePacket) -> list[list[tuple[float, float]]]:
+    """Per-stroke paths from the gyro-based pointer reconstruction, in the
+    same order as split_by_pen's runs. The wand's orientation is tracked
+    through the whole letter, pen-up gaps included, so strokes keep their
+    real positions relative to each other (not re-centered per stroke)."""
+    points = trajectory.reconstruct_pointer_path(packet.samples, packet.sample_rate_hz)
+    paths: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    for point, s in zip(points, packet.samples):
+        if s.pen:
+            current.append(point)
+        elif current:
+            paths.append(current)
+            current = []
+    if current:
+        paths.append(current)
+    return paths
+
+
 def _reindex(samples: list[StrokeSample], sample_rate_hz: int) -> list[StrokeSample]:
     """Re-time samples on a uniform grid. Used when concatenating multiple
     pen-down runs for the whole-path CNN fallback — the original `t` values
@@ -145,16 +164,25 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
 
     expected = strokes.expected_stroke_count(letter)
     per_stroke_scores = None
+    gyro_paths = pointer_strokes(packet) if trajectory.has_gyro(packet.samples) else None
 
     if letter.upper() in strokes.MULTI_STROKE_LETTERS and len(stroke_runs) == expected:
-        raw_paths = [
-            trajectory.reconstruct_path(run, packet.sample_rate_hz) for run in stroke_runs
-        ]
+        if gyro_paths is not None:
+            raw_paths = [trajectory.center(path) for path in gyro_paths]
+        else:
+            raw_paths = [
+                trajectory.reconstruct_path(run, packet.sample_rate_hz) for run in stroke_runs
+            ]
         accuracy, per_stroke_scores = strokes.validate_strokes(raw_paths, letter)
         display_paths = [
             trajectory.place_in_bbox(path, strokes.stroke_bbox(stroke))
             for path, stroke in zip(raw_paths, strokes.MULTI_STROKE_LETTERS[letter.upper()])
         ]
+    elif gyro_paths is not None:
+        accuracy = scoring.score_stroke(
+            [point for path in gyro_paths for point in path], letter, model
+        )
+        display_paths = gyro_paths
     else:
         merged = _reindex([s for run in stroke_runs for s in run], packet.sample_rate_hz)
         path = trajectory.reconstruct_path(merged, packet.sample_rate_hz)

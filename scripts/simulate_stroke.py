@@ -1,4 +1,4 @@
-"""Dev/test helper: synthesizes a fake accelerometer letter recording and
+"""Dev/test helper: synthesizes a fake IMU (accel + gyro) letter recording and
 POSTs it to a running server as a single /stroke call — matching the real
 firmware's actual contract (esp32/ on the `firmware` branch): one HTTP POST
 per letter, covering every stroke from first pen-down to the submit button
@@ -9,6 +9,7 @@ sending this one packet.
 Usage:
     python scripts/simulate_stroke.py T [--base-url http://localhost:8000]
     python scripts/simulate_stroke.py G --single-shot   # drawn without lifting
+    python scripts/simulate_stroke.py S --no-gyro       # exercise the accel-only fallback
 """
 
 import argparse
@@ -27,6 +28,9 @@ SAMPLE_RATE_HZ = 50  # matches esp32/include/config.example.h's SAMPLE_INTERVAL_
 STROKE_DURATION_S = 0.8
 GAP_DURATION_S = 0.3
 GRAVITY = 9.81
+ANGLE_SPAN_DEG = 40.0  # how far the wand swings across a letter (real data: ~40-70)
+ACCEL_NOISE = 0.05  # m/s^2
+GYRO_NOISE_DPS = 0.5
 
 
 def _chain_strokes(stroke_defs) -> list[tuple[float, float]]:
@@ -56,15 +60,6 @@ def _smooth(series: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(padded, kernel, mode="same")[window:-window]
 
 
-def _edge_taper(n_samples: int, edge_frac: float = 0.08) -> np.ndarray:
-    taper = np.ones(n_samples)
-    edge = max(2, int(n_samples * edge_frac))
-    ramp = 0.5 * (1 - np.cos(np.linspace(0, np.pi, edge)))
-    taper[:edge] = ramp
-    taper[-edge:] = ramp[::-1]
-    return taper
-
-
 def _path_to_xy(control_points, n_samples):
     control_points = np.array(control_points, dtype=float)
     t_control = np.linspace(0, 1, len(control_points))
@@ -75,83 +70,83 @@ def _path_to_xy(control_points, n_samples):
     return _smooth(x, window), _smooth(y, window)
 
 
-def _xy_to_accel(x, y, dt, n_samples):
-    vx = np.gradient(x, dt)
-    vy = np.gradient(y, dt)
-    taper = _edge_taper(n_samples)
-    vx *= taper
-    vy *= taper
-    ax = np.gradient(vx, dt)
-    ay = np.gradient(vy, dt)
-    return ax, ay
+def _letter_xy(stroke_control_point_lists):
+    """Whole-letter (x, y, pen) in unit-square coordinates: each stroke's
+    path, with the pen-up move from one stroke's end to the next stroke's
+    start in between (the hand keeps moving while the pen is up)."""
+    n_stroke = int(SAMPLE_RATE_HZ * STROKE_DURATION_S)
+    n_gap = int(SAMPLE_RATE_HZ * GAP_DURATION_S)
+    xs, ys, pens = [], [], []
+    for i, control_points in enumerate(stroke_control_point_lists):
+        x, y = _path_to_xy(control_points, n_stroke)
+        xs.append(x)
+        ys.append(y)
+        pens.append(np.ones(n_stroke, dtype=bool))
+        if i < len(stroke_control_point_lists) - 1:
+            gx, gy = _path_to_xy([(x[-1], y[-1]), stroke_control_point_lists[i + 1][0]], n_gap)
+            xs.append(gx)
+            ys.append(gy)
+            pens.append(np.zeros(n_gap, dtype=bool))
+    return np.concatenate(xs), np.concatenate(ys), np.concatenate(pens)
 
 
-def _stroke_accel(control_points, seed: int, duration_s: float = STROKE_DURATION_S):
-    """ax/ay/az (no `t`, no `pen` yet — assembled into the full letter later)
-    for one continuous stroke motion."""
-    n_samples = int(SAMPLE_RATE_HZ * duration_s)
-    rng = np.random.default_rng(seed)
+def _pointer_imu(x, y, rng):
+    """IMU readings for a wand that *aims* at (x, y) rather than moving
+    there — recorded hardware data shows players draw by rotating the wand
+    (total acceleration stays within ~1 m/s^2 of gravity). Matches the real
+    wand's mounting as measured by calibration: chip flat (z up), wand
+    pointing along +y, so x maps to yaw and y to pitch.
+
+    With orientation R = Rz(yaw) @ Rx(pitch), body-frame gyro rates are
+    (pitch', yaw' sin(pitch), yaw' cos(pitch)) and the accelerometer sees
+    gravity tilted into y/z: (0, g sin(pitch), g cos(pitch))."""
+    span = math.radians(ANGLE_SPAN_DEG)
+    yaw = -(x - 0.5) * span
+    pitch = (y - 0.5) * span
     dt = 1.0 / SAMPLE_RATE_HZ
-    x, y = _path_to_xy(control_points, n_samples)
-    ax, ay = _xy_to_accel(x, y, dt, n_samples)
+    yaw_rate = np.gradient(yaw, dt)
+    pitch_rate = np.gradient(pitch, dt)
+    n = len(x)
 
-    ax = ax + rng.normal(0, 0.05, size=n_samples)
-    ay = ay + rng.normal(0, 0.05, size=n_samples)
-    az = GRAVITY + rng.normal(0, 0.05, size=n_samples)
-    return ax, ay, az
-
-
-def _gap_accel(seed: int, duration_s: float = GAP_DURATION_S):
-    """Roughly-still samples for the pen-up pause between strokes — small
-    noise around gravity, no deliberate motion."""
-    n_samples = int(SAMPLE_RATE_HZ * duration_s)
-    rng = np.random.default_rng(seed + 1000)
-    ax = rng.normal(0, 0.05, size=n_samples)
-    ay = rng.normal(0, 0.05, size=n_samples)
-    az = GRAVITY + rng.normal(0, 0.05, size=n_samples)
-    return ax, ay, az
+    gyro = np.degrees(
+        np.stack([pitch_rate, yaw_rate * np.sin(pitch), yaw_rate * np.cos(pitch)], axis=1)
+    ) + rng.normal(0, GYRO_NOISE_DPS, size=(n, 3))
+    accel = np.stack(
+        [np.zeros(n), GRAVITY * np.sin(pitch), GRAVITY * np.cos(pitch)], axis=1
+    ) + rng.normal(0, ACCEL_NOISE, size=(n, 3))
+    return accel, gyro
 
 
-def assemble_letter_packet(letter: str, stroke_control_point_lists, seed: int = 0) -> dict:
+def assemble_letter_packet(
+    letter: str, stroke_control_point_lists, seed: int = 0, include_gyro: bool = True
+) -> dict:
     """Build one whole-letter packet: each control-point list becomes a
     pen=True run, with a pen=False gap run inserted between consecutive
     strokes (not after the last one) — mirrors the firmware's actual
-    buffer, which spans every stroke plus the pauses between them."""
-    ax_all, ay_all, az_all, pen_all = [], [], [], []
-
-    for i, control_points in enumerate(stroke_control_point_lists):
-        ax, ay, az = _stroke_accel(control_points, seed=seed + i)
-        ax_all.append(ax)
-        ay_all.append(ay)
-        az_all.append(az)
-        pen_all.append(np.ones(len(ax), dtype=bool))
-
-        if i < len(stroke_control_point_lists) - 1:
-            gax, gay, gaz = _gap_accel(seed=seed + i)
-            ax_all.append(gax)
-            ay_all.append(gay)
-            az_all.append(gaz)
-            pen_all.append(np.zeros(len(gax), dtype=bool))
-
-    ax = np.concatenate(ax_all)
-    ay = np.concatenate(ay_all)
-    az = np.concatenate(az_all)
-    pen = np.concatenate(pen_all)
+    buffer, which spans every stroke plus the pauses between them.
+    include_gyro=False omits gx/gy/gz to exercise the server's accel-only
+    fallback."""
+    rng = np.random.default_rng(seed)
+    x, y, pen = _letter_xy(stroke_control_point_lists)
+    accel, gyro = _pointer_imu(x, y, rng)
 
     dt_ms = 1000.0 / SAMPLE_RATE_HZ
-    samples = [
-        {
+    samples = []
+    for i in range(len(x)):
+        sample = {
             "t": round(i * dt_ms),
-            "ax": round(float(ax[i]), 5),
-            "ay": round(float(ay[i]), 5),
-            "az": round(float(az[i]), 5),
-            "gx": 0.0,
-            "gy": 0.0,
-            "gz": 0.0,
+            "ax": round(float(accel[i, 0]), 5),
+            "ay": round(float(accel[i, 1]), 5),
+            "az": round(float(accel[i, 2]), 5),
             "pen": bool(pen[i]),
         }
-        for i in range(len(ax))
-    ]
+        if include_gyro:
+            sample.update(
+                gx=round(float(gyro[i, 0]), 5),
+                gy=round(float(gyro[i, 1]), 5),
+                gz=round(float(gyro[i, 2]), 5),
+            )
+        samples.append(sample)
     return {
         "player_id": "player",
         "letter": letter,
@@ -171,7 +166,13 @@ def _post(url: str, payload: dict) -> dict:
         return json.loads(resp.read())
 
 
-def simulate_letter(letter: str, base_url: str, seed: int = 0, single_shot: bool = False):
+def simulate_letter(
+    letter: str,
+    base_url: str,
+    seed: int = 0,
+    single_shot: bool = False,
+    include_gyro: bool = True,
+):
     letter = letter.upper()
 
     if letter in strokes.MULTI_STROKE_LETTERS and not single_shot:
@@ -182,7 +183,9 @@ def simulate_letter(letter: str, base_url: str, seed: int = 0, single_shot: bool
     else:
         control_point_lists = [strokes.SINGLE_STROKE_LETTERS[letter]]
 
-    payload = assemble_letter_packet(letter, control_point_lists, seed=seed)
+    payload = assemble_letter_packet(
+        letter, control_point_lists, seed=seed, include_gyro=include_gyro
+    )
     result = _post(f"{base_url}/stroke", payload)
     print("result:", result)
     return result
@@ -199,9 +202,16 @@ def main():
         action="store_true",
         help="for multi-stroke letters, simulate drawing it all in one continuous stroke",
     )
+    parser.add_argument(
+        "--no-gyro",
+        action="store_true",
+        help="omit gx/gy/gz so the server uses its accel-only fallback",
+    )
     args = parser.parse_args()
 
-    simulate_letter(args.letter, args.base_url, single_shot=args.single_shot)
+    simulate_letter(
+        args.letter, args.base_url, single_shot=args.single_shot, include_gyro=not args.no_gyro
+    )
 
 
 if __name__ == "__main__":
