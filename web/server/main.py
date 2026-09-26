@@ -2,13 +2,14 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 import config
 import scoring
 import strokes
 import trajectory
+import tts
 from db import TigerStore
 from game_state import GameState
 from models import (
@@ -16,12 +17,19 @@ from models import (
     LanguageInfo,
     LanguagesResponse,
     LetterStats,
+    ModeInfo,
+    ModesResponse,
     RoundStartMessage,
     StatsResponse,
     StrokePacket,
     StrokeResultMessage,
     StrokeSample,
 )
+
+MODES = {
+    "learn": "Shows stroke hints",
+    "blind": "Sound only — no stroke hints",
+}
 
 log = logging.getLogger("uvicorn.error")
 
@@ -141,6 +149,44 @@ async def set_language(code: str) -> RoundStartMessage:
     msg = game_state.set_language(code)
     await broadcast(msg)
     return msg
+
+
+@app.get("/modes")
+def get_modes() -> ModesResponse:
+    return ModesResponse(
+        active=game_state.mode,
+        modes=[
+            ModeInfo(
+                code=code,
+                label=code.capitalize(),
+                description=description,
+                enabled=tts.enabled if code == "blind" else True,
+            )
+            for code, description in MODES.items()
+        ],
+    )
+
+
+@app.post("/mode/{code}")
+async def set_mode(code: str) -> RoundStartMessage:
+    """Switch Learn/Blind. Blind requires ElevenLabs to be configured (see
+    tts.py) — same locked-until-configured pattern as an unconfirmed
+    language."""
+    if code not in MODES:
+        raise HTTPException(404, f"unknown mode {code!r}")
+    if code == "blind" and not tts.enabled:
+        raise HTTPException(400, "blind mode needs ELEVENLABS_API_KEY configured")
+    msg = game_state.set_mode(code)
+    await broadcast(msg)
+    return msg
+
+
+@app.get("/tts/{language}/{letter}")
+async def get_tts(language: str, letter: str) -> Response:
+    audio = await tts.get_or_generate(language, letter)
+    if audio is None:
+        raise HTTPException(404, "tts unavailable for this prompt")
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 @app.post("/progress/reset")

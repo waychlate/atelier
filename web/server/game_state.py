@@ -21,6 +21,7 @@ from models import RoundStartMessage, StrokeResultMessage
 class GameState:
     player_id: str = PLAYER_ID
     language: str = DEFAULT_LANGUAGE
+    mode: str = "learn"  # "learn" (stroke hints) or "blind" (audio prompt only)
     cards_by_language: dict[str, dict[str, srs.Card]] = field(default_factory=dict)
     clock_by_language: dict[str, int] = field(default_factory=dict)
     # (ts, language, letter, score) — one row per graded attempt, all languages.
@@ -53,7 +54,10 @@ class GameState:
     def _round_start(self) -> RoundStartMessage:
         self.started_at = time.time()
         return RoundStartMessage(
-            round_id=self.round_id, language=self.language, target_letter=self.target_letter
+            round_id=self.round_id,
+            language=self.language,
+            target_letter=self.target_letter,
+            mode=self.mode,
         )
 
     def start_game(self) -> RoundStartMessage:
@@ -67,6 +71,12 @@ class GameState:
     def set_language(self, language: str) -> RoundStartMessage:
         self.language = language
         return self.start_game()
+
+    def set_mode(self, mode: str) -> RoundStartMessage:
+        """Switch Learn/Blind. Doesn't touch score/round/SRS state — it only
+        changes what hint the (already-picked) target letter gets."""
+        self.mode = mode
+        return self._round_start()
 
     def next_letter(self) -> RoundStartMessage:
         self.round_id += 1
@@ -98,6 +108,7 @@ class GameState:
         result = StrokeResultMessage(
             round_id=round_id,
             language=language,
+            mode=self.mode,
             letter=letter,
             accuracy=accuracy,
             grade=grade,

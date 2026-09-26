@@ -33,12 +33,14 @@ class RoundStartMessage(BaseModel):
     round_id: int
     language: str
     target_letter: str
+    mode: str = "learn"
 
 
 class StrokeResultMessage(BaseModel):
     type: Literal["stroke_result"] = "stroke_result"
     round_id: int
     language: str
+    mode: str
     letter: str
     accuracy: float
     grade: Literal["again", "hard", "good", "easy"]
@@ -93,3 +95,15 @@ class LanguageInfo(BaseModel):
 class LanguagesResponse(BaseModel):
     active: str
     languages: list[LanguageInfo]
+
+
+class ModeInfo(BaseModel):
+    code: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class ModesResponse(BaseModel):
+    active: str
+    modes: list[ModeInfo]

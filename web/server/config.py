@@ -11,6 +11,12 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # Single-player: must match PLAYER_ID in esp32/include/config.h.
 PLAYER_ID = os.environ.get("PLAYER_ID", "player_1")
 
+# ElevenLabs TTS for Blind mode (play the letter's sound instead of showing a
+# stroke hint). Unset -> Blind mode stays locked in the UI, same pattern as
+# config.Language.enabled — see tts.py.
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+
 
 @dataclass
 class Language:
@@ -23,7 +29,7 @@ class Language:
 
 
 LANGUAGES: dict[str, Language] = {
-    "latin": Language(label="Latin Alphabet", letters=["M", "A", "T", "H", "S", "E", "G"]),
+    "latin": Language(label="Latin Alphabet", letters=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     "japanese": Language(
         label="Japanese (Hiragana)",
         letters=["あ", "い", "う", "え", "お"],
