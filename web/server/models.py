@@ -119,6 +119,7 @@ class LanguageInfo(BaseModel):
     label: str
     enabled: bool
     letter_count: int
+    letters: list[str]
 
 
 class LanguagesResponse(BaseModel):
@@ -136,3 +137,31 @@ class ModeInfo(BaseModel):
 class ModesResponse(BaseModel):
     active: str
     modes: list[ModeInfo]
+
+
+class Player(BaseModel):
+    id: int
+    name: str
+    is_admin: bool = False
+
+
+class SignupRequest(BaseModel):
+    name: str
+
+
+class LoginRequest(BaseModel):
+    id: int
+
+
+class PlayersResponse(BaseModel):
+    players: list[Player]
+
+
+class PracticeConfigRequest(BaseModel):
+    letters: Optional[list[str]] = None  # None = full deck
+    selection_mode: Literal["srs", "accuracy"] = "srs"
+
+
+class PracticeConfigResponse(BaseModel):
+    letters: Optional[list[str]] = None
+    selection_mode: Literal["srs", "accuracy"]

@@ -7,6 +7,7 @@ invisible during a few-minute demo; review-scale keeps SM-2's behaviour
 timescale you can actually watch.
 """
 
+import random
 from dataclasses import dataclass
 from typing import Literal
 
@@ -90,3 +91,16 @@ def pick_next(
         return new[0]
 
     return min(seen, key=lambda c: (c.due, c.ease)).letter
+
+
+def pick_by_accuracy(
+    deck: list[str], stats: dict[str, dict], exclude: str | None = None
+) -> str:
+    """Practice mode alternative to pick_next: weight candidates by inverse
+    recent accuracy instead of the SM-2 due schedule, so weaker letters come
+    up more often. A letter with no attempt history yet is treated as
+    maximally weak (weight 100) so new letters still surface, not just ones
+    already attempted and scored low."""
+    candidates = [l for l in deck if l != exclude] or deck
+    weights = [max(1.0, 100.0 - stats.get(l, {}).get("avg_score", 0.0)) for l in candidates]
+    return random.choices(candidates, weights=weights, k=1)[0]

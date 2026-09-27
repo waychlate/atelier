@@ -21,9 +21,15 @@ from models import (
     LanguagesResponse,
     LetterStats,
     LiveSample,
+    LoginRequest,
     ModeInfo,
     ModesResponse,
+    Player,
+    PlayersResponse,
+    PracticeConfigRequest,
+    PracticeConfigResponse,
     RoundStartMessage,
+    SignupRequest,
     StatsResponse,
     StrokePacket,
     StrokeResultMessage,
@@ -54,12 +60,14 @@ game_state = GameState()
 model = None
 latin_model = None
 hiragana_model = None
+kanji_model = None
 db: TigerStore | None = None
 ws_clients: set[WebSocket] = set()
 background_tasks: set[asyncio.Task] = set()
 
 MODEL_PATH = Path(__file__).parent / "model" / "emnist_cnn.pt"
 HIRAGANA_MODEL_PATH = Path(__file__).parent / "model" / "hiragana_cnn.pt"
+KANJI_MODEL_PATH = Path(__file__).parent / "model" / "kanji_cnn.pt"
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 # Tracks wand orientation between /stroke/live calls for the live cursor.
@@ -84,7 +92,7 @@ def record_packet(packet: StrokePacket) -> None:
 
 @app.on_event("startup")
 async def on_startup():
-    global model, latin_model, hiragana_model, db
+    global model, latin_model, hiragana_model, kanji_model, db
     model = scoring.load_model(MODEL_PATH)
     latin_model = model
 
@@ -100,23 +108,50 @@ async def on_startup():
     else:
         log.warning("Hiragana model not found at %s; Japanese unavailable", HIRAGANA_MODEL_PATH)
 
+    if KANJI_MODEL_PATH.exists():
+        try:
+            kanji_model = scoring.load_model(
+                KANJI_MODEL_PATH, num_classes=len(scoring.KANJI_LETTER_TO_INDEX)
+            )
+            log.info("Kanji CNN loaded: %s", KANJI_MODEL_PATH)
+        except Exception as e:
+            kanji_model = None
+            log.warning("Kanji CNN failed to load: %s", e)
+    else:
+        log.warning("Kanji model not found at %s", KANJI_MODEL_PATH)
+
     if hiragana_model is None and "japanese" in config.LANGUAGES:
         config.LANGUAGES["japanese"].enabled = False
 
     if config.DATABASE_URL:
         try:
             db = await TigerStore.connect(config.DATABASE_URL)
-            for lang in config.LANGUAGES:
-                cards, clock = await db.load(game_state.player_id, lang)
-                game_state.load(lang, cards, clock)
+            await _load_player_cards(game_state.player_id)
             n = len(game_state.cards_by_language.get(config.DEFAULT_LANGUAGE, {}))
             log.info("Tiger Data connected: %d cards loaded for %s", n, config.DEFAULT_LANGUAGE)
+            db_players = await db.list_players()
+            for p in db_players:
+                game_state.players[p["id"]] = p
+            if db_players:
+                game_state._next_player_id = max(
+                    game_state._next_player_id, max(p["id"] for p in db_players) + 1
+                )
         except Exception as e:
             db = None
             log.warning("Tiger Data unavailable, running in-memory only: %s", e)
     else:
         log.info("DATABASE_URL not set, running in-memory only")
     game_state.start_game()
+
+
+async def _load_player_cards(player_id: str) -> None:
+    """(Re)populate cards_by_language/clock_by_language for player_id from
+    Tiger Data, one language at a time — used at startup and after every
+    login/signup (see GameState.switch_player's docstring for why this
+    lives here and not in game_state.py)."""
+    for lang in config.LANGUAGES:
+        cards, clock = await db.load(player_id, lang)
+        game_state.load(lang, cards, clock)
 
 
 @app.on_event("shutdown")
@@ -185,7 +220,10 @@ def get_languages() -> LanguagesResponse:
     return LanguagesResponse(
         active=game_state.language,
         languages=[
-            LanguageInfo(code=code, label=lang.label, enabled=lang.enabled, letter_count=len(lang.letters))
+            LanguageInfo(
+                code=code, label=lang.label, enabled=lang.enabled,
+                letter_count=len(lang.letters), letters=lang.letters,
+            )
             for code, lang in config.LANGUAGES.items()
         ],
     )
@@ -198,7 +236,7 @@ async def set_language(code: str) -> RoundStartMessage:
     lang = config.LANGUAGES.get(code)
     if lang is None:
         raise HTTPException(404, f"unknown language {code!r}")
-    if not lang.enabled or (code == "japanese" and hiragana_model is None):
+    if not lang.enabled or (code == "japanese" and hiragana_model is None) or (code == "kanji" and kanji_model is None):
         raise HTTPException(400, f"{code!r} isn't playable yet")
     msg = game_state.set_language(code)
     await broadcast(msg)
@@ -233,6 +271,63 @@ async def set_mode(code: str) -> RoundStartMessage:
     msg = game_state.set_mode(code)
     await broadcast(msg)
     return msg
+
+
+@app.post("/signup")
+async def signup(req: SignupRequest) -> Player:
+    """Create a new player (server-assigned id, no password — see
+    game_state.py's docstring) and log in as them immediately."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    player = game_state.create_player(name)
+    game_state.switch_player(player["id"])
+    if db:
+        try:
+            await db.create_player(player["id"], player["name"], player["is_admin"])
+            await _load_player_cards(game_state.player_id)
+        except Exception as e:
+            log.warning("Tiger Data player write failed: %s", e)
+    msg = game_state.start_game()
+    await broadcast(msg)
+    return Player(**player)
+
+
+@app.post("/login")
+async def login(req: LoginRequest) -> Player:
+    """Switch the active player by id — no password, this is a demo (see
+    game_state.py). 404s for an unknown id rather than creating one; use
+    /signup for that."""
+    player = game_state.get_player(req.id)
+    if player is None:
+        raise HTTPException(404, f"no player with id {req.id}")
+    game_state.switch_player(player["id"])
+    if db:
+        try:
+            await _load_player_cards(game_state.player_id)
+        except Exception as e:
+            log.warning("Tiger Data card load failed for player %s: %s", player["id"], e)
+    msg = game_state.start_game()
+    await broadcast(msg)
+    return Player(**player)
+
+
+@app.get("/players")
+def get_players() -> PlayersResponse:
+    return PlayersResponse(players=[Player(**p) for p in game_state.list_players()])
+
+
+@app.post("/practice/config")
+def set_practice_config(req: PracticeConfigRequest) -> PracticeConfigResponse:
+    """Restrict the SRS/accuracy candidate pool to a chosen subset of the
+    active language's letters, and/or switch how the next target letter is
+    picked. Takes effect starting with the next-picked letter (see
+    GameState._pick_target) — doesn't retroactively change the round
+    already in progress."""
+    game_state.set_practice_config(req.letters, req.selection_mode)
+    return PracticeConfigResponse(
+        letters=game_state.practice_letters, selection_mode=game_state.selection_mode
+    )
 
 
 @app.get("/tts/{language}/{letter}")
@@ -415,7 +510,10 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     # accel-only double integration for packets without gyro.
     gyro_paths = pointer_strokes(packet) if trajectory.has_gyro(packet.samples) else None
 
-    if game_state.language == "japanese":
+    if game_state.language == "kanji":
+        active_model = kanji_model
+        letter_to_index = scoring.KANJI_LETTER_TO_INDEX
+    elif game_state.language == "japanese":
         active_model = hiragana_model
         letter_to_index = scoring.HIRAGANA_LETTER_TO_INDEX
     else:

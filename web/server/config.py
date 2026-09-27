@@ -41,11 +41,21 @@ HIRAGANA_LETTERS = [
     "わ", "を", "ん",
 ]
 
+KANJI_LETTERS = [
+    "日", "月", "火", "水", "木",
+    "山", "川", "人", "口", "土",
+]
+
 LANGUAGES: dict[str, Language] = {
     "latin": Language(label="Latin Alphabet", letters=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     "japanese": Language(
         label="Japanese (Hiragana)",
         letters=HIRAGANA_LETTERS,
+        enabled=True,
+    ),
+    "kanji": Language(
+        label="Japanese (Kanji)",
+        letters=KANJI_LETTERS,
         enabled=True,
     ),
 }

@@ -23,6 +23,20 @@ K49_LETTERS = [
     "ゝ",
 ]
 
+# 10 common, high-semantic-value Kanji characters for foundational learning
+KANJI_LETTERS = [
+    "日",  # sun / day
+    "月",  # moon / month
+    "火",  # fire
+    "水",  # water
+    "木",  # tree / wood
+    "山",  # mountain
+    "川",  # river
+    "人",  # person
+    "口",  # mouth / opening
+    "土",  # earth / soil
+]
+
 
 class EmnistCNN(nn.Module):
     def __init__(self, num_classes: int = len(LETTERS)):

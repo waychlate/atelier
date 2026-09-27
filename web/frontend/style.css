@@ -1,3 +1,18 @@
+@font-face {
+  font-family: "Makcasa";
+  src: url("makcasa/Makcasa-Regular.otf") format("opentype"),
+       url("makcasa/Makcasa-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lostar";
+  src: url("lostar/Lostar.ttf") format("truetype");
+  font-display: swap;
+}
+
 :root {
   --bg: #111;
   --fg: #eee;
@@ -52,15 +67,22 @@ button {
   border-radius: 6px;
   color: var(--accent-fg);
   cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 button:hover {
   background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: scale(0.97);
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 /* ---------- screens ---------- */
@@ -74,6 +96,18 @@ button:disabled {
 
 .screen.active {
   display: block;
+  animation: screen-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes screen-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .back-btn {
@@ -88,15 +122,241 @@ button:disabled {
   background: var(--chip-bg);
 }
 
+/* ---------- login screen ---------- */
+
+#screen-login {
+  text-align: center;
+  padding-top: 12vh;
+}
+
+.auth-form {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.auth-form input {
+  padding: 10px 14px;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--fg);
+  width: 160px;
+}
+
+.auth-divider {
+  color: var(--muted-dim);
+  font-size: 0.8rem;
+  margin: 20px 0 12px;
+}
+
+.auth-error {
+  color: #ef5350;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.auth-error.hidden {
+  display: none;
+}
+
 /* ---------- menu screen ---------- */
 
 #screen-menu {
   text-align: center;
-  padding-top: 15vh;
+  padding-top: 6vh;
+}
+
+.menu-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+}
+
+.current-player {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.menu-tabs {
+  justify-content: center;
+  border-bottom: 1px solid var(--panel-border);
+  margin: 20px 0;
+}
+
+.menu-panel {
+  text-align: left;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.menu-panel:not(.hidden) {
+  animation: panel-fade-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes panel-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menu-panel.hidden {
+  display: none;
+}
+
+.locked-panel {
+  text-align: center;
+  color: var(--muted);
+}
+
+.placeholder-note {
+  color: var(--muted);
+}
+
+.versus-mock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  opacity: 0.6;
+}
+
+.versus-mock .namecard {
+  background: var(--chip-bg);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.versus-mock .hp-bar {
+  width: 80px;
+  height: 10px;
+  background: var(--chip-bg);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.versus-mock .hp-fill {
+  height: 100%;
+  background: #81c784;
+}
+
+.versus-mock .vs-label {
+  font-size: 0.8rem;
+  color: var(--muted-dim);
+}
+
+.letters-grid {
+  max-height: none;
+  overflow: visible;
+}
+
+.letter-toggle {
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  min-width: 32px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.letter-toggle:hover {
+  transform: translateY(-1px);
+  color: var(--fg);
+}
+
+.letter-toggle:active {
+  transform: scale(0.93);
+}
+
+.letter-toggle.selected {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(79, 195, 247, 0.3);
+}
+
+.group-toggle {
+  min-width: auto;
+  font-family: monospace;
+}
+
+.group-toggle.partial {
+  outline: 1.5px dashed var(--accent);
+  color: var(--fg);
+}
+
+.collapsible-group {
+  margin-bottom: 18px;
+}
+
+.collapsible-group > *:not(summary) {
+  animation: details-expand 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes details-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.collapsible-group summary.setting-label {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+.collapsible-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-group summary::after {
+  content: "▾";
+  font-size: 0.95rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.collapsible-group:not([open]) summary::after {
+  transform: rotate(-90deg);
+}
+
+.collapsible-group:not([open]) {
+  margin-bottom: 12px;
 }
 
 .game-title {
-  font-size: 2.4rem;
+  font-family: "Makcasa", "Lostar", system-ui, sans-serif;
+  font-size: 3.5rem;
+  letter-spacing: 2px;
   margin: 0 0 8px;
   color: var(--accent);
 }
@@ -198,17 +458,24 @@ button:disabled {
 .canvas-wrap {
   position: relative;
   border-radius: 8px;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Placeholder pass/fail flash while a result is held on screen (see
-   RESULT_DISPLAY_MS in app.js) - restyle freely, this is just a hook. */
+/* Fluid pass/fail feedback while result is held on screen */
 .canvas-wrap.result-pass {
-  box-shadow: 0 0 0 4px #4fc3f7aa;
+  box-shadow: 0 0 24px rgba(79, 195, 247, 0.45), 0 0 0 3px rgba(79, 195, 247, 0.8);
+  transform: scale(1.008);
 }
 
 .canvas-wrap.result-fail {
-  box-shadow: 0 0 0 4px #ef5350aa;
+  box-shadow: 0 0 24px rgba(239, 83, 80, 0.45), 0 0 0 3px rgba(239, 83, 80, 0.8);
+  animation: result-shake 0.35s ease;
+}
+
+@keyframes result-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
 }
 
 #canvas {
@@ -270,8 +537,22 @@ button:disabled {
 .grade {
   margin-left: 8px;
   font-size: 0.9rem;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  display: inline-block;
+  animation: grade-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes grade-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .grade:empty {
@@ -332,19 +613,25 @@ button:disabled {
 .tab {
   background: transparent;
   color: var(--muted);
-  padding: 6px 14px;
+  padding: 8px 16px;
   font-size: 0.9rem;
   border-radius: 6px 6px 0 0;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
 .tab:hover {
   background: var(--chip-bg);
+  color: var(--fg);
 }
 
 .tab.selected {
   background: var(--chip-bg);
   color: var(--fg);
-  font-weight: bold;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .callout {
@@ -461,10 +748,17 @@ button.secondary:hover {
   position: fixed;
   inset: 0;
   background: var(--overlay-bg);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10;
+  animation: overlay-fade 0.2s ease forwards;
+}
+
+@keyframes overlay-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .overlay.hidden {
@@ -479,6 +773,18 @@ button.secondary:hover {
   width: 320px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
+  animation: modal-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .modal h2 {

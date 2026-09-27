@@ -6,15 +6,27 @@ the database is persistence + analytics, not the source of truth mid-session.
 Latin and Japanese are independent SRS decks — switching the active
 language switches which deck is being played, but doesn't touch the other
 one's cards/clock (see config.LANGUAGES).
+
+There's exactly one physical wand, so "accounts" (players dict, below) are
+about attribution, not real concurrency: switch_player() changes whose
+attempts get recorded, it doesn't let two people play at once. No
+passwords — this is a demo, login is just picking a known id (see
+checkpoint.md).
 """
 
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Literal
 
 import srs
 from config import DEFAULT_LANGUAGE, LANGUAGES, PLAYER_ID
 from models import RoundStartMessage, StrokeResultMessage
+
+# Reserved id, no password — this is a demo, not a real auth system (see
+# checkpoint.md). New signups get sequential ids starting past this range.
+_DEFAULT_PLAYERS: dict[int, dict] = {444: {"id": 444, "name": "Admin", "is_admin": True}}
+_FIRST_SIGNUP_ID = 1000
 
 
 @dataclass
@@ -30,6 +42,16 @@ class GameState:
     round_id: int = 0
     target_letter: str = ""
     started_at: float = field(default_factory=time.time)
+    # None = practice the full deck; else restrict SRS/accuracy picking to
+    # this subset (still filtered against the active language's real deck,
+    # so a stale selection from a different language never wins outright).
+    practice_letters: list[str] | None = None
+    selection_mode: Literal["srs", "accuracy"] = "srs"
+    # In-memory player registry — GameState is the source of truth (same
+    # relationship as cards/attempts to db.py); Tiger Data is best-effort
+    # persistence layered on top by main.py, not required for login to work.
+    players: dict[int, dict] = field(default_factory=lambda: dict(_DEFAULT_PLAYERS))
+    _next_player_id: int = field(default=_FIRST_SIGNUP_ID, repr=False)
 
     @property
     def cards(self) -> dict[str, srs.Card]:
@@ -60,12 +82,32 @@ class GameState:
             mode=self.mode,
         )
 
+    def _candidate_deck(self) -> list[str]:
+        full = LANGUAGES[self.language].letters
+        if self.practice_letters:
+            filtered = [l for l in full if l in self.practice_letters]
+            if filtered:
+                return filtered
+        return full
+
+    def _pick_target(self, exclude: str | None = None) -> str:
+        deck = self._candidate_deck()
+        if self.selection_mode == "accuracy":
+            stats, _ = self.local_stats(self.language)
+            return srs.pick_by_accuracy(deck, stats, exclude=exclude)
+        return srs.pick_next(self.cards, deck, self.clock, exclude=exclude)
+
+    def set_practice_config(
+        self, letters: list[str] | None, selection_mode: Literal["srs", "accuracy"]
+    ) -> None:
+        self.practice_letters = letters
+        self.selection_mode = selection_mode
+
     def start_game(self) -> RoundStartMessage:
         """Reset the session (score, round counter). SRS progress is kept."""
         self.cumulative_score = 0
         self.round_id = 0
-        letters = LANGUAGES[self.language].letters
-        self.target_letter = srs.pick_next(self.cards, letters, self.clock)
+        self.target_letter = self._pick_target()
         return self._round_start()
 
     def set_language(self, language: str) -> RoundStartMessage:
@@ -80,10 +122,7 @@ class GameState:
 
     def next_letter(self) -> RoundStartMessage:
         self.round_id += 1
-        letters = LANGUAGES[self.language].letters
-        self.target_letter = srs.pick_next(
-            self.cards, letters, self.clock, exclude=self.target_letter
-        )
+        self.target_letter = self._pick_target(exclude=self.target_letter)
         return self._round_start()
 
     def submit(
@@ -119,6 +158,33 @@ class GameState:
             next_letter=next_round.target_letter,
         )
         return result, card
+
+    def create_player(self, name: str) -> dict:
+        pid = self._next_player_id
+        self._next_player_id += 1
+        player = {"id": pid, "name": name, "is_admin": False}
+        self.players[pid] = player
+        return player
+
+    def get_player(self, player_id: int) -> dict | None:
+        return self.players.get(player_id)
+
+    def list_players(self) -> list[dict]:
+        return sorted(self.players.values(), key=lambda p: p["id"])
+
+    def switch_player(self, player_id: int) -> bool:
+        """Make player_id the active one for scoring/persistence. Callers
+        (main.py) are responsible for reloading cards_by_language from Tiger
+        Data for this player afterward — GameState itself has no db access,
+        and cards_by_language is only ever populated for whichever single
+        player is currently active (see the module docstring)."""
+        if player_id not in self.players:
+            return False
+        self.player_id = str(player_id)
+        self.cards_by_language = {}
+        self.clock_by_language = {}
+        self.attempts = []
+        return True
 
     def local_stats(self, language: str | None = None) -> tuple[dict[str, dict], list[dict]]:
         """Same shape as TigerStore.stats, computed from the in-memory log."""
