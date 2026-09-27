@@ -18,6 +18,16 @@ letter also falls back to the CNN if the submitted stroke count doesn't
 match its canonical definition (e.g. someone draws G in one go instead of
 circle-then-descender) — see main.py's /submit handler.
 
+This module covers Latin only. Hiragana always uses the whole-path CNN
+(scoring.HIRAGANA_SCORE_BOOST_GAMMA compensates for its harsher 49-way
+softmax) — an earlier pass added hand-approximated per-stroke hiragana
+definitions here, but they were schematic guesses never checked against
+real handwriting or a real reference image, and the hint image now shown to
+players is a real stroke-order animation (Wikimedia Commons, see
+web/frontend/reference/), not one generated from this file — enforcing
+order against data that might not even match what the player is shown
+would be worse than not enforcing it. See checkpoint.md.
+
 Coordinates follow the same convention as trajectory.reconstruct_path's
 output: x right, y up, unit square.
 """
@@ -77,6 +87,23 @@ def _circle_points(
         t = i / n
         angle = math.radians(start_angle_deg) + sign * t * math.radians(sweep_deg)
         points.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    return points
+
+
+def _s_curve_points(n: int = 28) -> list[tuple[float, float]]:
+    """Smooth 'S' path: a single sine period traced by x = 0.5 - 0.4*sin(2*pi*t),
+    y = 1-t. t=0 -> top-center, t=0.25 -> upper-left bulge, t=0.5 -> center
+    (the crossover, at vertical mid-height, not swung to an edge), t=0.75 ->
+    lower-right bulge, t=1 -> bottom-center — matches how a capital S's two
+    lobes actually bulge (upper lobe left, lower lobe right) with the
+    crossover at the middle, densely sampled so the renderer's straight
+    segments between points read as a curve instead of a jagged polyline."""
+    points = []
+    for i in range(n):
+        t = i / (n - 1)
+        x = 0.5 - 0.4 * math.sin(2 * math.pi * t)
+        y = 1 - t
+        points.append((x, y))
     return points
 
 
@@ -209,7 +236,7 @@ MULTI_STROKE_LETTERS: dict[str, list[Stroke]] = {
 # point to enforce — always scored by the whole-path CNN instead.
 SINGLE_STROKE_LETTERS: dict[str, list[tuple[float, float]]] = {
     "M": [(0, 0), (0, 1), (0.5, 0.4), (1, 1), (1, 0)],
-    "S": [(1, 1), (0, 0.85), (0, 0.55), (1, 0.45), (1, 0.15), (0, 0)],
+    "S": _s_curve_points(),
     "C": [(0.9, 0.85), (0.6, 1), (0.2, 0.85), (0, 0.5), (0.2, 0.15), (0.6, 0), (0.9, 0.15)],
     "J": [(0.6, 1), (0.6, 0.3), (0.55, 0.1), (0.35, 0), (0.15, 0.05), (0.05, 0.25)],
     "U": [(0, 1), (0, 0.25), (0.15, 0.05), (0.5, 0), (0.85, 0.05), (1, 0.25), (1, 1)],

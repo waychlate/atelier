@@ -8,3 +8,4 @@ torch
 pillow
 psycopg[binary]
 psycopg-pool
+pyserial

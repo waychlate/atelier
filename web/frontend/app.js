@@ -269,7 +269,10 @@ function scheduleHint() {
   hideHint();
   hintTimer = setTimeout(() => {
     if (currentLetter) {
-      hintImage.src = `reference/${encodeURIComponent(currentLetter)}.png`;
+      // Hiragana hints are real stroke-order animations (Wikimedia Commons);
+      // Latin hints are our own self-generated arrow diagrams.
+      const ext = activeLanguage === "japanese" ? "gif" : "png";
+      hintImage.src = `reference/${encodeURIComponent(currentLetter)}.${ext}`;
       hintImage.classList.remove("hidden");
     }
   }, HINT_TIMEOUT_MS);

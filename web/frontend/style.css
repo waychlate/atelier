@@ -220,14 +220,15 @@ button:disabled {
 
 .hint-image {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 480px;
-  height: 480px;
+  bottom: 12px;
+  right: 12px;
+  width: 120px;
+  height: 120px;
   border-radius: 8px;
-  opacity: 0.85;
+  opacity: 0.9;
   transition: opacity 0.3s ease;
   pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
 .hint-image.hidden {

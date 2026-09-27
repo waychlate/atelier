@@ -22,6 +22,16 @@ def make_letter_to_index(letters: list[str] | str) -> dict[str, int]:
 LETTER_TO_INDEX = make_letter_to_index(LETTERS)
 HIRAGANA_LETTER_TO_INDEX = make_letter_to_index(K49_LETTERS)
 
+# The hiragana CNN is a 49-way classifier (vs. Latin's 26-way) trained to
+# 87.93% test accuracy (vs. Latin's 92.6%), so softmax spreads probability
+# mass thinner across more, harder-to-separate classes even for a genuinely
+# correct drawing — this consistently scores hiragana lower than an
+# equivalently "correct" Latin letter for reasons unrelated to how well the
+# player actually drew it. A sqrt-like curve (gamma < 1) lifts mid-low raw
+# scores substantially while leaving 0 and 100 fixed, rather than scoring
+# hiragana linearly against a tougher baseline.
+HIRAGANA_SCORE_BOOST_GAMMA = 0.6
+
 
 def load_model(weights_path: Path, num_classes: int = len(LETTERS)) -> torch.nn.Module:
     model = EmnistCNN(num_classes=num_classes)
@@ -49,7 +59,10 @@ def score_stroke(
     with torch.no_grad():
         probs = F.softmax(model(x), dim=1)[0]
 
-    return float(probs[index].item()) * 100.0
+    raw = float(probs[index].item())
+    if letter_to_index is HIRAGANA_LETTER_TO_INDEX:
+        raw = raw**HIRAGANA_SCORE_BOOST_GAMMA
+    return raw * 100.0
 
 
 def feedback_code(accuracy: float) -> str:

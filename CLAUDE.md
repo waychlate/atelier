@@ -9,6 +9,15 @@ only needs to consume the data contract described below, not the ESP32 code itse
 > firmware contract is one POST per letter with `pen` flags. `checkpoint.md` holds current
 > decisions and supersedes older sections below.
 
+> **Mandatory: keep `checkpoint.md` up to date.** After any change that affects scope,
+> architecture, data contracts, or decisions (not just this file's original spec, but
+> `checkpoint.md`'s own record of what's actually been built) — update `checkpoint.md` in
+> the same session, before considering the task done. It's the living doc a fresh session
+> reads to avoid re-deriving context or re-litigating settled decisions; letting it drift
+> from reality defeats its purpose. If `checkpoint.md` has grown too long/unwieldy to scan
+> quickly, summarize/consolidate it (compress settled history, cut anything now redundant
+> with the code itself) rather than just appending indefinitely.
+
 ## What this project is
 
 A 2-player language-learning game. Each player has an ESP32 with an accelerometer, LEDs, a
