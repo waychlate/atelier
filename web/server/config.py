@@ -1,7 +1,10 @@
 import os
 from dataclasses import dataclass
 
-HOST = os.environ.get("HOST", "0.0.0.0")
+# SERVER_HOST, not HOST: many shells/OSes already export a HOST env var
+# (usually the machine's hostname), which would silently override this
+# default and could bind somewhere unreachable from another laptop.
+SERVER_HOST = os.environ.get("SERVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
 ROUND_TIMEOUT_S = float(os.environ.get("ROUND_TIMEOUT_S", "15"))
 

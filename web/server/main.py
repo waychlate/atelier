@@ -14,6 +14,7 @@ import trajectory
 import tts
 from db import TigerStore
 from game_state import GameState
+from versus import VersusGame
 from models import (
     CursorMessage,
     ESP32FeedbackResponse,
@@ -28,6 +29,7 @@ from models import (
     StrokePacket,
     StrokeResultMessage,
     StrokeSample,
+    VersusStateMessage,
 )
 
 MODES = {
@@ -65,7 +67,11 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 # Tracks wand orientation between /stroke/live calls for the live cursor.
 # Display only - not used for scoring, which always replays the full letter
 # through trajectory.reconstruct_pointer_path once /stroke is called.
-live_tracker = trajectory.LiveOrientationTracker()
+live_trackers: dict[str, trajectory.LiveOrientationTracker] = {}  # one per wand (player_id)
+
+# The running versus match, or None for the normal solo game. See versus.py.
+versus: VersusGame | None = None
+versus_announced: set[str] = set()  # player_ids whose join has been broadcast
 
 # Opt-in: set RECORD_DIR to save every incoming packet as JSON, for tuning
 # trajectory reconstruction against real hardware data offline.
@@ -148,6 +154,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 target_letter=game_state.target_letter,
             ).model_dump_json()
         )
+        if versus:
+            await websocket.send_text(versus.state_message().model_dump_json())
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -362,16 +370,28 @@ def _reindex(samples: list[StrokeSample], sample_rate_hz: int) -> list[StrokeSam
 @app.post("/stroke/live")
 async def post_stroke_live(sample: LiveSample) -> dict:
     """One sample of the wand's continuous stream (see
-    scripts/serial_bridge.py) - updates the live cursor tracker and
+    scripts/serial_bridge.py) - updates that wand's live cursor tracker and
     broadcasts its new position over /ws. Display only, never scored:
     the graded result always comes from replaying the whole letter through
     /stroke once submit is pressed. Silently does nothing without gyro data
     - the pointer model needs it, and there's no accel-only fallback for a
     live cursor (unlike the final reconstruction)."""
+    if versus:
+        versus.join(sample.player_id)
+        if sample.letter_start:
+            versus.note_letter_start(sample.player_id)
+        if len(versus.players) != len(versus_announced):
+            versus_announced.update(versus.players)
+            await broadcast(versus.state_message())
     if sample.gx is None or sample.gy is None or sample.gz is None:
         return {}
-    x, y = live_tracker.update(sample)
-    await broadcast(CursorMessage(x=x, y=y, pen=sample.pen, letter_start=sample.letter_start))
+    tracker = live_trackers.setdefault(sample.player_id, trajectory.LiveOrientationTracker())
+    x, y = tracker.update(sample)
+    await broadcast(
+        CursorMessage(
+            player_id=sample.player_id, x=x, y=y, pen=sample.pen, letter_start=sample.letter_start
+        )
+    )
     return {}
 
 
@@ -389,21 +409,16 @@ async def _persist_and_broadcast(
     await broadcast(result)
 
 
-@app.post("/stroke")
-async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
-    """The whole letter (all strokes, from first pen-down to the submit
-    button press) arrives in this one call. Strict per-stroke order+
-    direction validation (strokes.py) is used when the letter has a
+def grade_packet(
+    packet: StrokePacket, letter: str, language: str
+) -> tuple[float, list, list[float] | None, str]:
+    """Score one submitted letter against `letter`. Returns (accuracy,
+    display_paths, per_stroke_scores, grading mode). Strict per-stroke
+    order+direction validation (strokes.py) is used when the letter has a
     canonical multi-stroke definition AND the pen-down run count matches
     it. Otherwise (single-stroke letters like M/S, or a mismatched stroke
     count) falls back to the whole-path CNN (scoring.py) on the
     concatenated pen-down samples."""
-    record_packet(packet)
-    # The firmware no longer knows the target letter (no network to fetch it
-    # over) - fall back to the round the server itself is running. A
-    # non-empty value is still honored (scripts/simulate_stroke.py uses this
-    # to test a specific letter regardless of the live round).
-    letter = packet.letter or game_state.target_letter
     stroke_runs = split_by_pen(packet)
 
     expected = strokes.expected_stroke_count(letter)
@@ -415,7 +430,7 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     # accel-only double integration for packets without gyro.
     gyro_paths = pointer_strokes(packet) if trajectory.has_gyro(packet.samples) else None
 
-    if game_state.language == "japanese":
+    if language == "japanese":
         active_model = hiragana_model
         letter_to_index = scoring.HIRAGANA_LETTER_TO_INDEX
     else:
@@ -457,7 +472,49 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
             path, letter, active_model, letter_to_index=letter_to_index
         )
         display_paths = [path]
+    return accuracy, display_paths, per_stroke_scores, mode
 
+
+async def post_versus_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
+    letter = versus.letter
+    accuracy, display_paths, _, _ = grade_packet(packet, letter, versus.language)
+    round_id = versus.round_id
+    status = versus.submit(packet.player_id, accuracy)
+    await broadcast(
+        versus.attempt_message(packet.player_id, status, accuracy, letter, display_paths)
+    )
+    if status == "won" or len(versus.players) != len(versus_announced):
+        versus_announced.update(versus.players)
+        await broadcast(versus.state_message())
+    player = versus.players.get(packet.player_id)
+    return ESP32FeedbackResponse(
+        score=accuracy,
+        feedback_code=scoring.feedback_code(accuracy),
+        round_id=round_id,
+        cumulative_score=0,
+        versus_status=status,
+        hp=player.hp if player else None,
+    )
+
+
+@app.post("/stroke")
+async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
+    """The whole letter (all strokes, from first pen-down to the submit
+    button press) arrives in this one call. Graded by grade_packet, then
+    applied to whichever game is running: versus if a match is on,
+    otherwise the solo SRS game."""
+    record_packet(packet)
+    if versus:
+        return await post_versus_stroke(packet)
+
+    # The firmware no longer knows the target letter (no network to fetch it
+    # over) - fall back to the round the server itself is running. A
+    # non-empty value is still honored (scripts/simulate_stroke.py uses this
+    # to test a specific letter regardless of the live round).
+    letter = packet.letter or game_state.target_letter
+    accuracy, display_paths, per_stroke_scores, mode = grade_packet(
+        packet, letter, game_state.language
+    )
     result, card = game_state.submit(letter, accuracy, display_paths, per_stroke_scores)
 
     # Persist then broadcast off the request path: the ESP32 gets its response
@@ -474,4 +531,44 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     )
 
 
+@app.post("/versus/start")
+async def start_versus() -> VersusStateMessage:
+    """Start (or restart) a versus match in the active language. Players
+    join as their wands are heard from."""
+    global versus
+    versus = VersusGame(language=game_state.language)
+    versus_announced.clear()
+    msg = versus.state_message()
+    await broadcast(msg)
+    return msg
+
+
+@app.post("/versus/stop")
+async def stop_versus() -> RoundStartMessage:
+    """End versus and go back to the solo game where it left off."""
+    global versus
+    versus = None
+    msg = get_current_round()
+    await broadcast(msg)
+    return msg
+
+
+@app.get("/versus")
+def get_versus() -> VersusStateMessage:
+    if not versus:
+        raise HTTPException(404, "no versus match running")
+    return versus.state_message()
+
+
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    # `uvicorn main:app --port 8000` defaults to binding 127.0.0.1 only -
+    # unreachable from another laptop on the same network, which multiplayer
+    # needs (one player's wand talks to the other's bridge, or both talk to
+    # a third laptop hosting this). Running this file directly binds
+    # config.HOST (default 0.0.0.0, override with the HOST env var) instead.
+    import uvicorn
+
+    uvicorn.run(app, host=config.HOST, port=config.PORT)

@@ -20,8 +20,10 @@ class LiveSample(StrokeSample):
     scripts/serial_bridge.py -> POST /stroke/live, for the live cursor.
     Unlike StrokeSample, `t` is the wand's millis() clock, not
     letter-relative. `letter_start` marks the first sample of a new letter
-    so the frontend can clear the previous trail."""
+    so the frontend can clear the previous trail. `player_id` keeps two
+    wands' streams apart (versus mode); older firmware omits it."""
 
+    player_id: str = "player"
     letter_start: bool = False
 
 
@@ -74,6 +76,7 @@ class CursorMessage(BaseModel):
     on screen (0, 0) sits."""
 
     type: Literal["cursor"] = "cursor"
+    player_id: str
     x: float
     y: float
     pen: bool
@@ -85,6 +88,43 @@ class ESP32FeedbackResponse(BaseModel):
     feedback_code: Literal["good", "ok", "bad"]
     round_id: int
     cumulative_score: int
+    # Versus only: what happened to this submission, and the player's HP.
+    versus_status: Optional[str] = None
+    hp: Optional[int] = None
+
+
+class VersusPlayer(BaseModel):
+    player_id: str
+    hp: int
+
+
+class VersusStateMessage(BaseModel):
+    """Full versus snapshot, broadcast when a match starts, a player joins,
+    or a round is won. `opens_in_ms` > 0 means the letter is shown but
+    drawing it doesn't count yet (the between-rounds intermission)."""
+
+    type: Literal["versus_state"] = "versus_state"
+    round_id: int
+    language: str
+    letter: str
+    opens_in_ms: int
+    players: list[VersusPlayer]
+    max_hp: int
+    winner: Optional[str] = None
+
+
+class VersusAttemptMessage(BaseModel):
+    """One graded versus submission. status "won" is followed by a fresh
+    versus_state (new letter, updated HP); "failed" locks that player out
+    for retry_in_ms."""
+
+    type: Literal["versus_attempt"] = "versus_attempt"
+    player_id: str
+    status: Literal["won", "failed", "locked", "stale", "waiting", "full", "over"]
+    accuracy: float
+    letter: str
+    paths: list[list[tuple[float, float]]]
+    retry_in_ms: int = 0
 
 
 class LetterStats(BaseModel):
