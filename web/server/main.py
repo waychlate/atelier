@@ -231,6 +231,7 @@ def get_languages() -> LanguagesResponse:
             LanguageInfo(
                 code=code, label=lang.label, enabled=lang.enabled,
                 letter_count=len(lang.letters), letters=lang.letters,
+                definitions=getattr(lang, "definitions", {}),
             )
             for code, lang in config.LANGUAGES.items()
         ],
@@ -557,19 +558,20 @@ def grade_packet(
         display_paths = gyro_paths if gyro_paths is not None else []
     elif gyro_paths is not None:
         accuracy = scoring.score_stroke(
-            [point for path in gyro_paths for point in path],
+            gyro_paths,
             letter,
             active_model,
             letter_to_index=letter_to_index,
         )
         display_paths = gyro_paths
     else:
-        merged = _reindex([s for run in stroke_runs for s in run], packet.sample_rate_hz)
-        path = trajectory.reconstruct_path(merged, packet.sample_rate_hz)
+        raw_paths = [
+            trajectory.reconstruct_path(run, packet.sample_rate_hz) for run in stroke_runs
+        ]
         accuracy = scoring.score_stroke(
-            path, letter, active_model, letter_to_index=letter_to_index
+            raw_paths, letter, active_model, letter_to_index=letter_to_index
         )
-        display_paths = [path]
+        display_paths = raw_paths
     return accuracy, display_paths, per_stroke_scores, mode
 
 
@@ -666,7 +668,7 @@ if __name__ == "__main__":
     # unreachable from another laptop on the same network, which multiplayer
     # needs (one player's wand talks to the other's bridge, or both talk to
     # a third laptop hosting this). Running this file directly binds
-    # config.SERVER_HOST (default 0.0.0.0, override with SERVER_HOST) instead.
+    # config.SERVER_HOST (default 0.0.0.0, override with the SERVER_HOST env var) instead.
     import uvicorn
 
     uvicorn.run(app, host=config.SERVER_HOST, port=config.PORT)

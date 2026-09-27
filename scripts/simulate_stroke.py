@@ -182,6 +182,19 @@ def simulate_letter(
         control_point_lists = [_chain_strokes(strokes.MULTI_STROKE_LETTERS[letter_key])]
     elif letter_key in strokes.SINGLE_STROKE_LETTERS:
         control_point_lists = [strokes.SINGLE_STROKE_LETTERS[letter_key]]
+    elif letter == "火":
+        # Canonical 4-stroke shape for 火
+        control_point_lists = [
+            [(0.25, 0.65), (0.35, 0.48)],
+            [(0.75, 0.68), (0.65, 0.48)],
+            [(0.5, 0.88), (0.5, 0.55), (0.4, 0.3), (0.2, 0.12)],
+            [(0.5, 0.52), (0.62, 0.32), (0.82, 0.12)],
+        ]
+    elif letter == "人":
+        control_point_lists = [
+            [(0.5, 0.85), (0.4, 0.5), (0.2, 0.15)],
+            [(0.45, 0.55), (0.65, 0.3), (0.8, 0.15)],
+        ]
     else:
         # Generic stroke for letters without predefined stroke vectors (e.g. hiragana)
         control_point_lists = [[(0.2, 0.7), (0.8, 0.7), (0.5, 0.2), (0.5, 0.8), (0.2, 0.7)]]

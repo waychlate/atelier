@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # SERVER_HOST, not HOST: many shells/OSes already export a HOST env var
 # (usually the machine's hostname), which would silently override this
@@ -16,9 +16,16 @@ PLAYER_ID = os.environ.get("PLAYER_ID", "player_1")
 
 # ElevenLabs TTS for Blind mode (play the letter's sound instead of showing a
 # stroke hint). Unset -> Blind mode stays locked in the UI, same pattern as
-# config.Language.enabled — see tts.py.
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "vTdzvS51qswyWt3mQvK3")
+ELEVENLABS_JA_VOICE_ID = os.environ.get("ELEVENLABS_JA_VOICE_ID", "v36jhKEfrKXRPHYQKYyU")
+
+
+def voice_id_for_language(language: str) -> str:
+    """Returns the appropriate ElevenLabs voice ID based on language."""
+    if language in ("japanese", "kanji"):
+        return ELEVENLABS_JA_VOICE_ID
+    return ELEVENLABS_VOICE_ID
 
 
 @dataclass
@@ -29,6 +36,7 @@ class Language:
     # playable yet: no stroke/CNN recognition built for this script. See
     # checkpoint.md's "Japanese: plumbing now, recognition later" note.
     enabled: bool = True
+    definitions: dict[str, str] = field(default_factory=dict)
 
 
 HIRAGANA_LETTERS = [
@@ -49,6 +57,19 @@ KANJI_LETTERS = [
     "山", "川", "人", "口", "土",
 ]
 
+KANJI_DEFINITIONS: dict[str, str] = {
+    "日": "Sun / Day",
+    "月": "Moon / Month",
+    "火": "Fire",
+    "水": "Water",
+    "木": "Tree / Wood",
+    "山": "Mountain",
+    "川": "River",
+    "人": "Person",
+    "口": "Mouth",
+    "土": "Earth / Soil",
+}
+
 LANGUAGES: dict[str, Language] = {
     "latin": Language(label="Latin Alphabet", letters=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     "japanese": Language(
@@ -60,6 +81,7 @@ LANGUAGES: dict[str, Language] = {
         label="Japanese (Kanji)",
         letters=KANJI_LETTERS,
         enabled=True,
+        definitions=KANJI_DEFINITIONS,
     ),
 }
 DEFAULT_LANGUAGE = "latin"
