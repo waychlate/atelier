@@ -148,10 +148,31 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
   restarts. Unset or unreachable `DATABASE_URL` &rarr; server runs purely in-memory via
   `GameState`.
 
+## Multiplayer Versus Mode (Backend Integrated)
+
+- **Engine (`web/server/versus.py`)**:
+  - Two wands race to draw the same random letter in the active language.
+  - Initial HP: 101 (`START_HP`), Damage: 20 (`DAMAGE`), Passing accuracy: 80.0% (`PASS_ACCURACY`),
+    Failed retry cooldown: 1.0s (`RETRY_COOLDOWN_S`), Intermission between rounds: 2.2s (`INTERMISSION_S`).
+  - First player to submit a drawing with $\ge 80\%$ accuracy wins the round; the opponent loses 20 HP.
+  - Submissions $< 80\%$ lock out only that player for 1 second without losing HP.
+  - First player to reach 0 HP loses the match.
+  - State messages (`VersusStateMessage`) broadcast on start, join, round win, and match over.
+  - Submissions broadcast `VersusAttemptMessage` with live paths and status (`won`, `failed`, `locked`, `stale`).
+- **Unified Grading Architecture**:
+  - `grade_packet(packet, letter, language)` in `main.py` serves both Solo SRS (`post_stroke`) and
+    Versus (`post_versus_stroke`).
+  - Multi-stroke path separation (preserving separate strokes without connector lines in `rasterize.py`)
+    powers both modes.
+- **Multi-Player Live Cursors**:
+  - `esp32/src/main.cpp` tags each live sample with `player_id`.
+  - `main.py` maintains per-player `live_trackers: dict[str, LiveOrientationTracker]`, broadcasting
+    `CursorMessage(player_id=...)` so the frontend can display independent live cursors for each wand.
+
 ## Open Questions & Future Milestones
 
-- **Versus Mode**: Currently a static mock; requires HP bar logic, relative scoring deltas,
-  and turn/speed timers when a second wand is available.
+- **Versus Frontend UI**: Wire the mock elements in `#menu-panel-versus` (or a dedicated versus view)
+  to `/versus/start`, `/versus/stop`, and the `versus_state` / `versus_attempt` WebSocket messages.
 - **Second Wand Mounting**: Pointing axis coordinates (`POINTING_AXIS` in `trajectory.py`)
   are currently calibrated for wand #1; a second device requires wand-specific axis config.
 - **Kanji Expansion**: Can expand beyond the initial 10 foundational characters to full
