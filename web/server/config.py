@@ -1,5 +1,9 @@
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 # SERVER_HOST, not HOST: many shells/OSes already export a HOST env var
 # (usually the machine's hostname), which would silently override this

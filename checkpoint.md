@@ -216,7 +216,9 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
   `web/server/tts_cache/`. Requires `ELEVENLABS_API_KEY` and voice IDs:
   - English/Latin: `ELEVENLABS_VOICE_ID` (`vTdzvS51qswyWt3mQvK3`).
   - Japanese (Hiragana & Kanji): `ELEVENLABS_JA_VOICE_ID` (`v36jhKEfrKXRPHYQKYyU`).
-  - Routed dynamically via `config.voice_id_for_language(language)`.
+  - Routed dynamically via [`config.voice_id_for_language(language)`](file:///home/doa/projects/atelier/web/server/config.py#L29-L33).
+  - All 46 Hiragana and 10 Kanji audio clips are 100% pre-generated and cached to disk.
+  - `config.py` loads `.env` via `python-dotenv`.
   - Unset API key &rarr; Blind mode stays locked in UI.
 - **Tiger Data (TimescaleDB)**: Optional persistence for `attempts` and SRS cards across
   restarts. Unset or unreachable `DATABASE_URL` &rarr; server runs purely in-memory via
