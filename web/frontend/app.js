@@ -21,10 +21,25 @@ const languageOptionsEl = document.getElementById("language-options");
 const modeOptionsEl = document.getElementById("mode-options");
 const weakestCalloutEl = document.getElementById("weakest-callout");
 const weakestListEl = document.getElementById("weakest-list");
-const settingsOverlay = document.getElementById("settings-overlay");
 const audioSlider = document.getElementById("audio-slider");
 const playAudioSlider = document.getElementById("play-audio-slider");
 const replayAudioBtn = document.getElementById("replay-audio-btn");
+const wandSensitivitySlider = document.getElementById("wand-sensitivity-slider");
+const loginForm = document.getElementById("login-form");
+const loginIdInput = document.getElementById("login-id");
+const loginErrorEl = document.getElementById("login-error");
+const signupForm = document.getElementById("signup-form");
+const signupNameInput = document.getElementById("signup-name");
+const currentPlayerEl = document.getElementById("current-player");
+const menuTabsEl = document.getElementById("menu-tabs");
+const practiceGroupsGroupEl = document.getElementById("practice-groups-group");
+const practiceGroupsEl = document.getElementById("practice-groups");
+const practiceLettersEl = document.getElementById("practice-letters");
+const practiceSelectionOptionsEl = document.getElementById("practice-selection-options");
+const practiceSelectAllBtn = document.getElementById("practice-select-all");
+const practiceClearAllBtn = document.getElementById("practice-clear-all");
+const practiceStartBtn = document.getElementById("practice-start-btn");
+const switchPlayerBtn = document.getElementById("switch-player-btn");
 
 const GRADE_LABELS = {
   again: "Again",
@@ -49,6 +64,10 @@ let statsTabLanguage = "latin"; // which tab the stats screen is showing (indepe
 let languages = []; // cached GET /languages response
 let modes = []; // cached GET /modes response
 let promptAudio = null; // the Audio object for the current Blind-mode prompt
+let currentPlayer = null; // {id, name, is_admin} — set on login/signup
+let practiceLetters = null; // null = full deck; else a Set of selected letters
+let practiceSelectionMode = "srs"; // "srs" or "accuracy"
+let activeMenuTab = "practice";
 
 // Blind mode is audio-recall: showing the letter next to the speaker icon
 // would give away the answer before the player even tries. Learn mode has
@@ -66,27 +85,105 @@ function showScreen(name) {
   if (name === "stats") refreshStats();
 }
 
-document
-  .getElementById("play-btn")
-  .addEventListener("click", () => showScreen("play"));
-document
-  .getElementById("stats-nav-btn")
-  .addEventListener("click", () => showScreen("stats"));
 document.querySelectorAll(".back-btn").forEach((btn) => {
   btn.addEventListener("click", () => showScreen(btn.dataset.back));
 });
 
-// ---------- settings modal ----------
+// ---------- login / accounts ----------
+// No passwords — this is a demo. Login is by id (the admin account is just
+// id 444, nothing special about the flow); signup picks a name and the
+// server assigns an id, shown in the header once logged in. See
+// game_state.py for why there's no per-player concurrency, just attribution.
 
-document.getElementById("settings-btn").addEventListener("click", () => {
-  settingsOverlay.classList.remove("hidden");
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = Number(loginIdInput.value);
+  loginErrorEl.classList.add("hidden");
+  const res = await fetch("/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    loginErrorEl.textContent = "No account with that ID.";
+    loginErrorEl.classList.remove("hidden");
+    return;
+  }
+  currentPlayer = await res.json();
+  loginIdInput.value = "";
+  onLoggedIn();
 });
-document.getElementById("settings-close-btn").addEventListener("click", () => {
-  settingsOverlay.classList.add("hidden");
+
+signupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = signupNameInput.value.trim();
+  if (!name) return;
+  const res = await fetch("/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) return;
+  currentPlayer = await res.json();
+  signupNameInput.value = "";
+  onLoggedIn();
 });
-settingsOverlay.addEventListener("click", (e) => {
-  if (e.target === settingsOverlay) settingsOverlay.classList.add("hidden");
+
+function onLoggedIn() {
+  currentPlayerEl.textContent = `${currentPlayer.name} (#${currentPlayer.id})`;
+  showScreen("menu");
+  refreshStats();
+}
+
+switchPlayerBtn.addEventListener("click", () => {
+  currentPlayer = null;
+  loginErrorEl.classList.add("hidden");
+  showScreen("login");
 });
+
+// ---------- menu tabs ----------
+// "stats" isn't a panel within #screen-menu like the others — it navigates
+// to the existing full #screen-stats screen, same as the old standalone
+// "View stats" link did, just promoted into the tab bar per the user's ask.
+
+const MENU_TABS = [
+  { code: "versus", label: "Versus" },
+  { code: "practice", label: "Practice" },
+  { code: "shop", label: "Shop" },
+  { code: "stats", label: "Stats" },
+  { code: "settings", label: "Settings" },
+];
+
+function renderMenuTabs() {
+  menuTabsEl.replaceChildren();
+  for (const t of MENU_TABS) {
+    const btn = document.createElement("button");
+    btn.className = "tab" + (t.code === activeMenuTab ? " selected" : "");
+    btn.textContent = t.label;
+    btn.addEventListener("click", () => {
+      if (t.code === "stats") {
+        showScreen("stats");
+        return;
+      }
+      showMenuTab(t.code);
+    });
+    menuTabsEl.appendChild(btn);
+  }
+}
+
+function showMenuTab(code) {
+  activeMenuTab = code;
+  renderMenuTabs();
+  for (const t of MENU_TABS) {
+    if (t.code === "stats") continue;
+    document
+      .getElementById(`menu-panel-${t.code}`)
+      .classList.toggle("hidden", t.code !== code);
+  }
+}
+
+renderMenuTabs();
+showMenuTab(activeMenuTab);
 
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
@@ -177,6 +274,9 @@ function renderLanguageOptions() {
         await fetch(`/language/${lang.code}`, { method: "POST" });
         activeLanguage = lang.code;
         renderLanguageOptions();
+        practiceLetters = null; // a different deck's selection wouldn't carry over meaningfully
+        renderPracticeLetters();
+        submitPracticeConfig();
       });
     }
     languageOptionsEl.appendChild(btn);
@@ -233,17 +333,161 @@ function renderModeOptions() {
   }
 }
 
+// ---------- practice tab ----------
+// "Show letter" reuses the existing Learn/Blind mode machinery
+// (renderModeOptions/loadModes above) rendered into this tab's own
+// #mode-options container — it's specifically about how a practice round is
+// prompted, not a general app setting, so it lives here rather than in
+// Settings (see implement.md).
+
+const SELECTION_MODES = [
+  { code: "srs", label: "Spaced repetition", description: "Reviews due letters first" },
+  { code: "accuracy", label: "Weighted by accuracy", description: "Practices weakest letters more" },
+];
+
+function currentLanguageLetters() {
+  return languages.find((l) => l.code === activeLanguage)?.letters || [];
+}
+
+// Hiragana's 46 characters are taught/organized in gojuon rows (a-i-u-e-o,
+// ka-ki-ku-ke-ko, ...) — config.py's HIRAGANA_LETTERS list is laid out in
+// exactly this row order, so slicing it by these sizes recovers the rows
+// without needing a backend change. Only meaningful for "japanese" — Latin
+// has no such grouping, and kanji (added separately) isn't gojuon-organized.
+const HIRAGANA_GROUPS = [
+  ["a", 5], ["ka", 5], ["sa", 5], ["ta", 5], ["na", 5],
+  ["ha", 5], ["ma", 5], ["ya", 3], ["ra", 5], ["wa", 3],
+];
+
+function hiraganaGroups() {
+  const letters = currentLanguageLetters();
+  const groups = [];
+  let i = 0;
+  for (const [label, size] of HIRAGANA_GROUPS) {
+    groups.push({ label, letters: letters.slice(i, i + size) });
+    i += size;
+  }
+  return groups;
+}
+
+function renderPracticeGroups() {
+  const isHiragana = activeLanguage === "japanese";
+  practiceGroupsGroupEl.classList.toggle("hidden", !isHiragana);
+  if (!isHiragana) return;
+  practiceGroupsEl.replaceChildren();
+  const letters = currentLanguageLetters();
+  for (const g of hiraganaGroups()) {
+    const btn = document.createElement("button");
+    const allSelected = g.letters.every((l) =>
+      practiceLetters === null ? true : practiceLetters.has(l)
+    );
+    const someSelected =
+      !allSelected &&
+      g.letters.some((l) => practiceLetters !== null && practiceLetters.has(l));
+    btn.className =
+      "letter-toggle group-toggle" +
+      (allSelected ? " selected" : someSelected ? " partial" : "");
+    btn.textContent = `${g.label} (${g.letters.join("")})`;
+    btn.addEventListener("click", () => {
+      if (practiceLetters === null) practiceLetters = new Set(letters);
+      if (allSelected) {
+        for (const l of g.letters) practiceLetters.delete(l);
+      } else {
+        for (const l of g.letters) practiceLetters.add(l);
+      }
+      renderPracticeLetters();
+      submitPracticeConfig();
+    });
+    practiceGroupsEl.appendChild(btn);
+  }
+}
+
+function renderPracticeLetters() {
+  renderPracticeGroups();
+  practiceLettersEl.replaceChildren();
+  const letters = currentLanguageLetters();
+  for (const letter of letters) {
+    const btn = document.createElement("button");
+    const selected = practiceLetters === null || practiceLetters.has(letter);
+    btn.className = "letter-toggle" + (selected ? " selected" : "");
+    btn.textContent = letter;
+    btn.addEventListener("click", () => {
+      // Lazily materialize the "everything selected" set on first
+      // deselection, instead of tracking exclusions.
+      if (practiceLetters === null) practiceLetters = new Set(letters);
+      if (practiceLetters.has(letter)) practiceLetters.delete(letter);
+      else practiceLetters.add(letter);
+      renderPracticeLetters();
+      submitPracticeConfig();
+    });
+    practiceLettersEl.appendChild(btn);
+  }
+}
+
+practiceSelectAllBtn.addEventListener("click", () => {
+  practiceLetters = null;
+  renderPracticeLetters();
+  submitPracticeConfig();
+});
+
+if (practiceClearAllBtn) {
+  practiceClearAllBtn.addEventListener("click", () => {
+    practiceLetters = new Set();
+    renderPracticeLetters();
+    submitPracticeConfig();
+  });
+}
+
+function renderPracticeSelectionOptions() {
+  practiceSelectionOptionsEl.replaceChildren();
+  for (const m of SELECTION_MODES) {
+    const btn = document.createElement("button");
+    btn.className =
+      "mode-option" + (m.code === practiceSelectionMode ? " selected" : "");
+    btn.innerHTML = `${m.label}<small>${m.description}</small>`;
+    btn.addEventListener("click", () => {
+      practiceSelectionMode = m.code;
+      renderPracticeSelectionOptions();
+      submitPracticeConfig();
+    });
+    practiceSelectionOptionsEl.appendChild(btn);
+  }
+}
+
+function submitPracticeConfig() {
+  const letters = practiceLetters === null ? null : [...practiceLetters];
+  fetch("/practice/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ letters, selection_mode: practiceSelectionMode }),
+  });
+}
+
+practiceStartBtn.addEventListener("click", () => showScreen("play"));
+
+renderPracticeSelectionOptions();
+
+// ---------- wand sensitivity (settings tab) ----------
+
+wandSensitivitySlider.addEventListener("input", () => {
+  cursorPxPerRad = Number(wandSensitivitySlider.value);
+  try {
+    localStorage.setItem("cursorPxPerRad", String(cursorPxPerRad));
+  } catch {}
+});
+
 // ---------- play screen ----------
 
 // Pixels per radian of wand rotation. Fixed, not auto-fit: re-fitting on
 // every sample blew tiny movements up to full size. Adjustable live with the
-// + / - keys (remembered per browser) so it can be tuned to how someone
-// actually holds the wand.
+// + / - keys or the Settings-tab slider (remembered per browser) so it can
+// be tuned to how someone actually holds the wand.
 const DEFAULT_PX_PER_RAD = 220;
 let cursorPxPerRad = DEFAULT_PX_PER_RAD;
 try {
   cursorPxPerRad = Number(localStorage.getItem("cursorPxPerRad")) || DEFAULT_PX_PER_RAD;
 } catch {}
+wandSensitivitySlider.value = cursorPxPerRad;
 // Fraction of the way the displayed cursor moves toward each new reading
 // (50 Hz), smoothing out hand tremor and sensor noise at a small lag.
 const CURSOR_SMOOTHING = 0.6;
@@ -269,9 +513,9 @@ function scheduleHint() {
   hideHint();
   hintTimer = setTimeout(() => {
     if (currentLetter) {
-      // Hiragana hints are real stroke-order animations (Wikimedia Commons);
+      // Hiragana & Kanji hints are real stroke-order animations (Wikimedia Commons);
       // Latin hints are our own self-generated arrow diagrams.
-      const ext = activeLanguage === "japanese" ? "gif" : "png";
+      const ext = activeLanguage === "latin" ? "png" : "gif";
       hintImage.src = `reference/${encodeURIComponent(currentLetter)}.${ext}`;
       hintImage.classList.remove("hidden");
     }
@@ -570,15 +814,14 @@ function renderTimeline(points) {
     c.fill();
   });
 
-  const fmt = (iso) =>
-    new Date(iso).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  // x-axis reads as rounds played, not wall-clock time: each point's label
+  // is the cumulative attempt count up to and including it.
+  let cumulative = 0;
+  const roundsAt = points.map((p) => (cumulative += p.attempts));
   c.fillStyle = "#777";
-  c.fillText(fmt(points[0].bucket), pad.l, h - 4);
+  c.fillText(`round ${roundsAt[0]}`, pad.l, h - 4);
   if (points.length > 1) {
-    const last = fmt(points[points.length - 1].bucket);
+    const last = `round ${roundsAt[roundsAt.length - 1]}`;
     c.fillText(last, w - pad.r - c.measureText(last).width, h - 4);
   }
 }
@@ -658,6 +901,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "+" && e.key !== "=" && e.key !== "-") return;
   cursorPxPerRad *= e.key === "-" ? 1 / 1.25 : 1.25;
   cursorPxPerRad = Math.min(Math.max(cursorPxPerRad, 20), 1000);
+  wandSensitivitySlider.value = cursorPxPerRad;
   try {
     localStorage.setItem("cursorPxPerRad", String(cursorPxPerRad));
   } catch {}
@@ -683,6 +927,6 @@ resetProgressBtn.addEventListener("click", async () => {
   refreshStats();
 });
 
-loadLanguages();
+loadLanguages().then(renderPracticeLetters);
 loadModes();
 connect();

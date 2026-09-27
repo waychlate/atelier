@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from model.cnn import EmnistCNN, LETTERS, K49_LETTERS
+from model.cnn import EmnistCNN, LETTERS, K49_LETTERS, KANJI_LETTERS
 from rasterize import path_to_image
 
 
@@ -21,6 +21,7 @@ def make_letter_to_index(letters: list[str] | str) -> dict[str, int]:
 
 LETTER_TO_INDEX = make_letter_to_index(LETTERS)
 HIRAGANA_LETTER_TO_INDEX = make_letter_to_index(K49_LETTERS)
+KANJI_LETTER_TO_INDEX = make_letter_to_index(KANJI_LETTERS)
 
 # The hiragana CNN is a 49-way classifier (vs. Latin's 26-way) trained to
 # 87.93% test accuracy (vs. Latin's 92.6%), so softmax spreads probability

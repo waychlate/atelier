@@ -63,6 +63,18 @@ SCHEMA = [
         schedule_interval => INTERVAL '1 minute',
         if_not_exists => TRUE)
     """,
+    # id is assigned by GameState (in-memory, source of truth), not generated
+    # here — this table is just this row's persistence, same relationship as
+    # attempts/cards to GameState's in-memory copies.
+    """
+    CREATE TABLE IF NOT EXISTS players (
+        id integer PRIMARY KEY,
+        name text NOT NULL,
+        is_admin boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+    "INSERT INTO players (id, name, is_admin) VALUES (444, 'Admin', true) ON CONFLICT (id) DO NOTHING",
 ]
 
 
@@ -198,3 +210,17 @@ class TigerStore:
             )
             timeline = await cur.fetchall()
         return letters, timeline
+
+    async def create_player(self, player_id: int, name: str, is_admin: bool = False) -> None:
+        async with self.pool.connection(timeout=5) as conn:
+            await conn.execute(
+                "INSERT INTO players (id, name, is_admin) VALUES (%s, %s, %s) "
+                "ON CONFLICT (id) DO NOTHING",
+                (player_id, name, is_admin),
+            )
+
+    async def list_players(self) -> list[dict]:
+        async with self.pool.connection() as conn:
+            cur = conn.cursor(row_factory=dict_row)
+            await cur.execute("SELECT id, name, is_admin FROM players ORDER BY id")
+            return await cur.fetchall()
