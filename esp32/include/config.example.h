@@ -15,6 +15,8 @@
 #define PIN_SUBMIT          18   // press LOW to submit the letter (INPUT_PULLUP)
 #define PIN_I2C_SDA         21
 #define PIN_I2C_SCL         22
+#define PIN_LED             19   // lit briefly on a successful submit
+#define LED_FLASH_MS        2200 // matches RESULT_DISPLAY_MS in web/frontend/app.js - keep in sync
 
 #define MPU9250_I2C_ADDR    0x68
 

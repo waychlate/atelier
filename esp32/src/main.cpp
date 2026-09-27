@@ -38,6 +38,24 @@ struct LetterSample {
 Button pen_button(PIN_PEN);
 Button submit_button(PIN_SUBMIT);
 
+// Lit for LED_FLASH_MS after a successful submit. Placeholder for future
+// per-feat feedback (accuracy, streaks, ...) once there's game logic to
+// drive it - for now it's just "a letter went out." Timed in loop(), not
+// delay(), so it doesn't stall sampling.
+uint32_t led_off_at_ms = 0;
+
+void flash_led() {
+    digitalWrite(PIN_LED, HIGH);
+    led_off_at_ms = millis() + LED_FLASH_MS;
+}
+
+void update_led() {
+    if (led_off_at_ms && (int32_t)(millis() - led_off_at_ms) >= 0) {
+        digitalWrite(PIN_LED, LOW);
+        led_off_at_ms = 0;
+    }
+}
+
 // A letter runs from its first pen-down until submit. Samples are taken the
 // whole time, pen-up gaps included, so the server can see how the wand moved
 // between strokes.
@@ -148,6 +166,7 @@ void submit_letter() {
         Serial.print(buf);
     }
     Serial.println("]}");
+    flash_led();
     reset_letter();
 }
 
@@ -175,6 +194,8 @@ void setup() {
 
     pinMode(PIN_PEN, INPUT_PULLUP);
     pinMode(PIN_SUBMIT, INPUT_PULLUP);
+    pinMode(PIN_LED, OUTPUT);
+    digitalWrite(PIN_LED, LOW);
     letter_buffer.reserve(MAX_LETTER_SAMPLES);
 
     while (!imu_init()) {
@@ -202,4 +223,6 @@ void loop() {
     sample_if_due(pen_now);
 
     if (submit_now && !submit_was) submit_letter();
+
+    update_led();
 }
