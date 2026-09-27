@@ -57,13 +57,6 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: "Lostar";
-  src: url("lostar/Lostar.ttf") format("truetype");
-  font-display: swap;
-}
-
-
 :root {
   --bg: #111;
   --fg: #eee;
@@ -433,7 +426,7 @@ button:disabled {
 }
 
 .game-title {
-  font-family: "Makcasa", "Lostar", system-ui, sans-serif;
+  font-family: "Makcasa", system-ui, sans-serif;
   font-size: 3.5rem;
   letter-spacing: 2px;
   margin: 0 0 8px;
