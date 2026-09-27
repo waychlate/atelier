@@ -4,6 +4,60 @@ Living state-of-the-project doc for Claude sessions working on this repo. `CLAUD
 the original spec; this file tracks what's actually been decided and built since, so a
 fresh session doesn't have to re-derive it from conversation history.
 
+## Small UX fixes: theme-aware clouds, Practice-tab language switch, button centering
+
+- **`.cloud`'s color is now a `--cloud-color` theme token** instead of a hardcoded gold
+  rgba — the original value was a light gold, nearly invisible against light theme's pale
+  parchment background. Light theme now uses a darker warm brown (`rgba(110, 80, 30,
+  0.22)`) so clouds actually show up in both themes. Same pattern as every other
+  theme-dependent color in this file — if something needs to look different per theme, it
+  goes in `:root`/`:root[data-theme="light"]` as a variable, never hardcoded in the rule
+  that uses it.
+- **Language can now be switched from the Practice tab**, not just Settings —
+  `renderLanguageOptions()` (`app.js`) was generalized to render into *both*
+  `#language-options` (Settings) and the new `#practice-language-options` (Practice, added
+  above "Groupings") from a single loop over `[languageOptionsEl,
+  practiceLanguageOptionsEl]`, so both stay in sync automatically on every call — no
+  duplicated logic, no separate state to keep consistent.
+- **"Start practicing" button is centered** — wrapped in a `.practice-start-row` div
+  (`text-align: center`) since `.menu-panel`'s own `text-align: left` was left-aligning it.
+
+## Background: floating multi-script glyphs + drifting clouds
+
+Went through two iterations this session before landing here — worth knowing if either
+approach comes up again:
+1. Sparkle particle field (dots) from the original magic-theme pass.
+2. Replaced with dense horizontal marquee rows of characters (one row per script, scrolling
+   sideways) — tuned through several rounds (size, spacing, speed, row density) into a
+   deliberately dense, "mysterious wall of ancient text" look, tiled to cover the full
+   viewport height.
+3. **Replaced again** (teammate's request via the user): rows felt too rigid/mechanical —
+   wanted it to "float around and look magical, with clouds" instead. Current
+   implementation:
+
+- `app.js`'s `initMagicBackground()` (container: `#magic-background`, was
+  `#alphabet-marquee`) builds two independent layers:
+  - **`.cloud`** — 6 large soft-blurred radial-gradient ellipses (`filter: blur(30px)`),
+    randomized size/vertical position/duration, drifting left-to-right via `@keyframes
+    cloud-drift`.
+  - **`.floating-glyph`** — 45 individual characters, each randomly drawn from a pooled set
+    of all 10 scripts (not one-script-per-row anymore — `MARQUEE_SCRIPTS` is now just a
+    flat character pool, the per-script row structure is gone), each with randomized
+    starting x-position, font-size, and a per-element `--drift` CSS custom property (random
+    horizontal sway amount) consumed by `@keyframes glyph-float` (rises + sways + rotates +
+    fades in/out over its lifetime).
+  - Both use **negative `animation-delay`** (`-Math.random() * N`) so elements are already
+    mid-animation on page load instead of all synchronously fading in from zero — avoids an
+    obviously-just-loaded look.
+- All motion is still pure CSS — JS only scatters initial randomized values once at load,
+  no per-frame work, consistent with every background-effect iteration this session.
+- Font-family stack (Noto Sans CJK/Arabic/Thai/Khmer/Devanagari, confirmed installed via
+  `fc-list`) carried over unchanged from the marquee version — same caveat: a machine
+  without these fonts shows tofu boxes for the non-Latin glyphs, purely cosmetic.
+- Still hidden on the Play screen via the same `body.play-active` toggle in `showScreen()`
+  (now targets `.magic-background` instead of `.alphabet-marquee`) — that decision (keep
+  the drawing screen visually quiet) has survived all three background iterations.
+
 ## Stats charts were blurry — canvas DPR/sizing fix
 
 The "Accuracy over time" timeline and per-letter sparklines (`app.js`) drew at a fixed
@@ -91,7 +145,9 @@ history if the reasoning behind a choice is unclear later.
     not leak between players. Tiger Data persistence (`db.create_player`/`list_players`)
     is best-effort.
 - **Menu navigation**: Four horizontal tabs: Versus (placeholder — static namecards/HP
-  bars), Practice, Shop (placeholder), and Settings.
+  bars), Practice, Shop (placeholder), and Settings. Subtitle dynamically updates per tab
+  (`showMenuTab`): Versus ("Test your skills against equal opponents"), Practice ("Hone your
+  skills in isolation"), Shop ("Reap your rewards"), and Settings (empty/hidden).
 - **Practice tab**:
   - Full deck character grid (`GameState.practice_letters`, `None` = full deck).
   - Selection mode toggle: `"srs"` (SM-2 scheduler) vs. `"accuracy"` (`srs.pick_by_accuracy`,
