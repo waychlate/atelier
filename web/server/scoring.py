@@ -11,23 +11,34 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from model.cnn import EmnistCNN, LETTERS
+from model.cnn import EmnistCNN, LETTERS, K49_LETTERS
 from rasterize import path_to_image
 
-LETTER_TO_INDEX = {letter: i for i, letter in enumerate(LETTERS)}
+
+def make_letter_to_index(letters: list[str] | str) -> dict[str, int]:
+    return {letter: i for i, letter in enumerate(letters)}
 
 
-def load_model(weights_path: Path) -> torch.nn.Module:
-    model = EmnistCNN()
+LETTER_TO_INDEX = make_letter_to_index(LETTERS)
+HIRAGANA_LETTER_TO_INDEX = make_letter_to_index(K49_LETTERS)
+
+
+def load_model(weights_path: Path, num_classes: int = len(LETTERS)) -> torch.nn.Module:
+    model = EmnistCNN(num_classes=num_classes)
     model.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
     model.eval()
     return model
 
 
 def score_stroke(
-    path: list[tuple[float, float]], target_letter: str, model: torch.nn.Module
+    path: list[tuple[float, float]],
+    target_letter: str,
+    model: torch.nn.Module,
+    letter_to_index: dict[str, int] = LETTER_TO_INDEX,
 ) -> float:
-    index = LETTER_TO_INDEX.get(target_letter.upper())
+    index = letter_to_index.get(target_letter)
+    if index is None and target_letter.upper() in letter_to_index:
+        index = letter_to_index[target_letter.upper()]
     if index is None:
         return 0.0
 

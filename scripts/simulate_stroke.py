@@ -173,15 +173,18 @@ def simulate_letter(
     single_shot: bool = False,
     include_gyro: bool = True,
 ):
-    letter = letter.upper()
+    letter_key = letter.upper()
 
-    if letter in strokes.MULTI_STROKE_LETTERS and not single_shot:
-        control_point_lists = [s.control_points for s in strokes.MULTI_STROKE_LETTERS[letter]]
-    elif letter in strokes.MULTI_STROKE_LETTERS and single_shot:
+    if letter_key in strokes.MULTI_STROKE_LETTERS and not single_shot:
+        control_point_lists = [s.control_points for s in strokes.MULTI_STROKE_LETTERS[letter_key]]
+    elif letter_key in strokes.MULTI_STROKE_LETTERS and single_shot:
         # drawn without lifting: one continuous pen=True run, no gaps.
-        control_point_lists = [_chain_strokes(strokes.MULTI_STROKE_LETTERS[letter])]
+        control_point_lists = [_chain_strokes(strokes.MULTI_STROKE_LETTERS[letter_key])]
+    elif letter_key in strokes.SINGLE_STROKE_LETTERS:
+        control_point_lists = [strokes.SINGLE_STROKE_LETTERS[letter_key]]
     else:
-        control_point_lists = [strokes.SINGLE_STROKE_LETTERS[letter]]
+        # Generic stroke for letters without predefined stroke vectors (e.g. hiragana)
+        control_point_lists = [[(0.2, 0.7), (0.8, 0.7), (0.5, 0.2), (0.5, 0.8), (0.2, 0.7)]]
 
     payload = assemble_letter_packet(
         letter, control_point_lists, seed=seed, include_gyro=include_gyro
@@ -193,9 +196,7 @@ def simulate_letter(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "letter", choices=list(strokes.MULTI_STROKE_LETTERS) + list(strokes.SINGLE_STROKE_LETTERS)
-    )
+    parser.add_argument("letter", help="letter to simulate (e.g. 'A', 'T', 'あ')")
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument(
         "--single-shot",

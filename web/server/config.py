@@ -28,12 +28,25 @@ class Language:
     enabled: bool = True
 
 
+HIRAGANA_LETTERS = [
+    "あ", "い", "う", "え", "お",
+    "か", "き", "く", "け", "こ",
+    "さ", "し", "す", "せ", "そ",
+    "た", "ち", "つ", "て", "と",
+    "な", "に", "ぬ", "ね", "の",
+    "は", "ひ", "ふ", "へ", "ほ",
+    "ま", "み", "む", "め", "も",
+    "や", "ゆ", "よ",
+    "ら", "り", "る", "れ", "ろ",
+    "わ", "を", "ん",
+]
+
 LANGUAGES: dict[str, Language] = {
     "latin": Language(label="Latin Alphabet", letters=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     "japanese": Language(
         label="Japanese (Hiragana)",
-        letters=["あ", "い", "う", "え", "お"],
-        enabled=False,
+        letters=HIRAGANA_LETTERS,
+        enabled=True,
     ),
 }
 DEFAULT_LANGUAGE = "latin"

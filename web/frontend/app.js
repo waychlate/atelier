@@ -23,7 +23,12 @@ const audioSlider = document.getElementById("audio-slider");
 const playAudioSlider = document.getElementById("play-audio-slider");
 const replayAudioBtn = document.getElementById("replay-audio-btn");
 
-const GRADE_LABELS = { again: "Again", hard: "Hard", good: "Good", easy: "Easy" };
+const GRADE_LABELS = {
+  again: "Again",
+  hard: "Hard",
+  good: "Good",
+  easy: "Easy",
+};
 const HINT_TIMEOUT_MS = 5000;
 
 let hintTimer = null;
@@ -44,8 +49,12 @@ function showScreen(name) {
   if (name === "stats") refreshStats();
 }
 
-document.getElementById("play-btn").addEventListener("click", () => showScreen("play"));
-document.getElementById("stats-nav-btn").addEventListener("click", () => showScreen("stats"));
+document
+  .getElementById("play-btn")
+  .addEventListener("click", () => showScreen("play"));
+document
+  .getElementById("stats-nav-btn")
+  .addEventListener("click", () => showScreen("stats"));
 document.querySelectorAll(".back-btn").forEach((btn) => {
   btn.addEventListener("click", () => showScreen(btn.dataset.back));
 });
@@ -115,7 +124,9 @@ function setVolume(value) {
   // Two sliders (settings modal + play screen) control the same volume —
   // keep them mirrored so changing either one updates both.
   audioSlider.addEventListener("input", () => setVolume(audioSlider.value));
-  playAudioSlider.addEventListener("input", () => setVolume(playAudioSlider.value));
+  playAudioSlider.addEventListener("input", () =>
+    setVolume(playAudioSlider.value),
+  );
 })();
 
 async function loadLanguages() {
@@ -136,7 +147,8 @@ function renderLanguageOptions() {
   languageOptionsEl.replaceChildren();
   for (const lang of languages) {
     const btn = document.createElement("button");
-    btn.className = "lang-option" + (lang.code === activeLanguage ? " selected" : "");
+    btn.className =
+      "lang-option" + (lang.code === activeLanguage ? " selected" : "");
     btn.textContent = lang.label;
     if (!lang.enabled) {
       btn.classList.add("locked");
@@ -185,7 +197,8 @@ function renderModeOptions() {
   modeOptionsEl.replaceChildren();
   for (const mode of modes) {
     const btn = document.createElement("button");
-    btn.className = "mode-option" + (mode.code === activeMode ? " selected" : "");
+    btn.className =
+      "mode-option" + (mode.code === activeMode ? " selected" : "");
     btn.innerHTML = `${mode.label}<small>${mode.description}</small>`;
     if (!mode.enabled) {
       btn.classList.add("locked");
@@ -218,7 +231,7 @@ function scheduleHint() {
   hideHint();
   hintTimer = setTimeout(() => {
     if (currentLetter) {
-      hintImage.src = `reference/${currentLetter}.png`;
+      hintImage.src = `reference/${encodeURIComponent(currentLetter)}.png`;
       hintImage.classList.remove("hidden");
     }
   }, HINT_TIMEOUT_MS);
@@ -226,7 +239,9 @@ function scheduleHint() {
 
 function playPrompt() {
   if (!currentLetter) return;
-  promptAudio = new Audio(`/tts/${activeLanguage}/${encodeURIComponent(currentLetter)}`);
+  promptAudio = new Audio(
+    `/tts/${activeLanguage}/${encodeURIComponent(currentLetter)}`,
+  );
   promptAudio.volume = currentVolume();
   promptAudio.play().catch(() => {
     // Autoplay can be blocked before any user gesture on the page — the
@@ -353,7 +368,8 @@ function renderLetters(letters) {
     const pill = document.createElement("span");
     pill.className = `pill ${l.status}`;
     pill.textContent = l.status;
-    if (l.lapses > 0) pill.title = `${l.lapses} lapse${l.lapses > 1 ? "s" : ""}`;
+    if (l.lapses > 0)
+      pill.title = `${l.lapses} lapse${l.lapses > 1 ? "s" : ""}`;
     statusTd.appendChild(pill);
 
     const sparkTd = document.createElement("td");
@@ -376,8 +392,12 @@ function renderLetters(letters) {
 }
 
 function renderWeakest(letters) {
-  const attempted = letters.filter((l) => l.attempts > 0 && l.avg_score != null);
-  const weakest = [...attempted].sort((a, b) => a.avg_score - b.avg_score).slice(0, 3);
+  const attempted = letters.filter(
+    (l) => l.attempts > 0 && l.avg_score != null,
+  );
+  const weakest = [...attempted]
+    .sort((a, b) => a.avg_score - b.avg_score)
+    .slice(0, 3);
   weakestCalloutEl.classList.toggle("hidden", weakest.length === 0);
   weakestListEl.textContent = weakest
     .map((l) => `${l.letter} (${l.avg_score.toFixed(0)}%)`)
@@ -436,7 +456,10 @@ function renderTimeline(points) {
   });
 
   const fmt = (iso) =>
-    new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    new Date(iso).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   c.fillStyle = "#777";
   c.fillText(fmt(points[0].bucket), pad.l, h - 4);
   if (points.length > 1) {
@@ -449,7 +472,8 @@ async function refreshStats() {
   try {
     const res = await fetch(`/stats?language=${statsTabLanguage}`);
     const stats = await res.json();
-    sourceEl.textContent = stats.source === "tiger" ? "Tiger Data" : "offline (local)";
+    sourceEl.textContent =
+      stats.source === "tiger" ? "Tiger Data" : "offline (local)";
     sourceEl.className = `source ${stats.source}`;
     totalReviewsEl.textContent = stats.total_reviews;
     renderLetters(stats.letters);
@@ -501,9 +525,13 @@ nextRoundBtn.addEventListener("click", () => {
 });
 
 resetProgressBtn.addEventListener("click", async () => {
-  const label = languages.find((l) => l.code === statsTabLanguage)?.label || statsTabLanguage;
+  const label =
+    languages.find((l) => l.code === statsTabLanguage)?.label ||
+    statsTabLanguage;
   if (!confirm(`Erase all "${label}" learning progress and history?`)) return;
-  await fetch(`/progress/reset?language=${statsTabLanguage}`, { method: "POST" });
+  await fetch(`/progress/reset?language=${statsTabLanguage}`, {
+    method: "POST",
+  });
   gradeEl.textContent = "";
   accuracyEl.textContent = "-";
   cumulativeScoreEl.textContent = "0";

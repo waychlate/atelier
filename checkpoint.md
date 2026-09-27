@@ -17,7 +17,7 @@ fresh session doesn't have to re-derive it from conversation history.
   trained on EMNIST letters. Score = softmax probability of the target letter × 100.
   DTW/fastdtw and the old `templates/` directory are gone.
 - **Path reconstruction uses gyro + accel (laser-pointer model).** Real wand recordings
-  show players draw by *rotating* the wand — total acceleration stays within ~1 m/s² of
+  show players draw by _rotating_ the wand — total acceleration stays within ~1 m/s² of
   gravity during a stroke — so accel-only double-integration was mostly measuring gravity
   shifting between axes as the wand tilted: fine for straight strokes, badly distorted
   curvy ones (S, M). `trajectory.reconstruct_pointer_path` tracks orientation (gyro
@@ -42,7 +42,7 @@ fresh session doesn't have to re-derive it from conversation history.
   - Multi-stroke letters get strict validation: each submitted stroke is checked against
     its expected slot's direction (net displacement vector, 8-way compass, or rotation
     direction via signed area for circular strokes like O/G's bowl) — this also enforces
-    *order*, since a stroke drawn out of sequence usually fails its slot's check.
+    _order_, since a stroke drawn out of sequence usually fails its slot's check.
   - Single-stroke letters (drawn as one continuous motion) skip this and fall back to the
     whole-path CNN.
   - If a multi-stroke letter's submitted stroke count doesn't match its expected count,
@@ -80,17 +80,18 @@ pen-down until submit is pressed (pen-up gaps between strokes included, each sam
   `/stroke` packet gets saved as JSON (gitignored) — used to find and fix the ay-sign bug
   and to build/verify the gyro pointer reconstruction above, against real motion instead
   of only synthetic data.
-- `scripts/simulate_stroke.py` synthesizes IMU data for a wand that *aims* at a letter's
+- `scripts/simulate_stroke.py` synthesizes IMU data for a wand that _aims_ at a letter's
   shape (gyro rates + gravity tilt) rather than translates through it — matches how real
   hardware draws. `--single-shot` tests a multi-stroke letter drawn without lifting the
   pen; `--no-gyro` tests the accel-only fallback.
 
 ## Languages, modes, spaced repetition, TTS (teammate's work, merged into this session)
 
-- **`config.LANGUAGES`**: Latin (26 letters, fully playable) and Japanese hiragana (5
-  characters, `enabled=False` — plumbing only, no stroke/CNN recognition built for it yet;
-  `POST /language/japanese` is rejected until that's done). `GET /languages`,
-  `POST /language/{code}` to switch the active deck.
+- **`config.LANGUAGES`**: Latin (26 letters) and Japanese hiragana (46
+  characters, gojuon set) are both fully playable (`enabled=True`). Japanese uses a
+  dedicated 49-class CNN trained on Kuzushiji-49 (`model/hiragana_cnn.pt`), with
+  reference glyph images rendered from Noto Sans CJK into `web/frontend/reference/`.
+  `GET /languages`, `POST /language/{code}` switch the active deck.
 - **Modes**: `learn` (shows the stroke reference hint) and `blind` (audio-only — plays the
   letter's sound via ElevenLabs TTS instead of a visual hint, `tts.py`). Blind mode is
   locked in the UI until `ELEVENLABS_API_KEY` is configured (`GET /modes` reports
@@ -122,7 +123,7 @@ pen-down until submit is pressed (pen-up gaps between strokes included, each sam
 - `trajectory.py` — `reconstruct_pointer_path` (primary) and `reconstruct_path`
   (accel-only fallback); `place_in_bbox` repositions each independently-reconstructed
   multi-stroke submission into its canonical slot for display (true relative position
-  across *separate* button-press recordings isn't recoverable from accel alone — this
+  across _separate_ button-press recordings isn't recoverable from accel alone — this
   doesn't apply to the gyro pointer path, which tracks position continuously through
   pen-up gaps).
 - `strokes.py` — canonical per-letter stroke definitions (all 26 Latin letters) +
@@ -146,8 +147,8 @@ pen-down until submit is pressed (pen-up gaps between strokes included, each sam
 - Stroke-order choices in `strokes.py` are a best-guess standard block-letter order for
   most letters — worth a sanity check against how this is meant to be taught, since
   they're easy to tweak (just data) but do need real-hand testing per letter.
-- Japanese hiragana is plumbing-only (`config.Language.enabled=False`) — no stroke
-  definitions or recognition built for it.
+- Japanese hiragana is now playable with full whole-path CNN scoring across 46 characters.
+  Per-stroke validation is intentionally skipped for hiragana (falling through to whole-path CNN).
 - Second wand: mounting-dependent constants (`POINTING_AXIS` in `trajectory.py`) are a
   single global right now, measured on one wand. A second wand with a differently-mounted
   chip needs its own calibration; if two wands are ever live at once this becomes
