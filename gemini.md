@@ -166,14 +166,13 @@ All proposed changes and verification tasks have been successfully completed.
 ### Issues & Troubles Encountered
 
 1. **Hugging Face `datasets` 5.0.1 Deprecation of Remote Code**:
-   - *Problem*: The initial plan called for `datasets.load_dataset` on a Kuzushiji-49 Hugging Face repository. However, `datasets` v5.0.1 completely removed `trust_remote_code`, causing community dataset loaders containing Python scripts (`kmnist.py`) to hard fail.
-   - *Resolution*: Directly pulled the official ROIS-CODH Kuzushiji-49 `.npz` files (66 MB train, 11 MB test) and cached them in `~/.cache/k49`. A standard PyTorch `Dataset` wrapper (`K49TorchDataset`) provided clean, zero-dependency ingestion without relying on Hugging Face hub script execution.
+   - _Problem_: The initial plan called for `datasets.load_dataset` on a Kuzushiji-49 Hugging Face repository. However, `datasets` v5.0.1 completely removed `trust_remote_code`, causing community dataset loaders containing Python scripts (`kmnist.py`) to hard fail.
+   - _Resolution_: Directly pulled the official ROIS-CODH Kuzushiji-49 `.npz` files (66 MB train, 11 MB test) and cached them in `~/.cache/k49`. A standard PyTorch `Dataset` wrapper (`K49TorchDataset`) provided clean, zero-dependency ingestion without relying on Hugging Face hub script execution.
 
 2. **Kuzushiji Classical Cursive vs. Modern Printed Glyphs**:
-   - *Problem*: K49 is digitized from classical Edo-period literature; some characters feature historical cursive ligatures that differ from modern printed kana taught to beginners.
-   - *Resolution*: Inspected sample bitmaps across characters. Modern core hiragana (あ, い, し, の, ん, etc.) were confirmed to match expected stroke topology. We verified that images are stored upright (unlike EMNIST's transposed orientation bug) and documented the classical style caveat in `train_hiragana_model.py`'s module docstring.
+   - _Problem_: K49 is digitized from classical Edo-period literature; some characters feature historical cursive ligatures that differ from modern printed kana taught to beginners.
+   - _Resolution_: Inspected sample bitmaps across characters. Modern core hiragana (あ, い, し, の, ん, etc.) were confirmed to match expected stroke topology. We verified that images are stored upright (unlike EMNIST's transposed orientation bug) and documented the classical style caveat in `train_hiragana_model.py`'s module docstring.
 
 3. **Stuck Git Rebase & Co-Author Removal**:
-   - *Problem*: An interactive rebase (`git rebase -i HEAD~5`) was left paused with merge conflicts on `main.py`. The rebase attempted to flatten an older merge commit (`25bca82 Merge origin/main: languages, modes, SRS, TTS`), trying to replay already-merged commits.
-   - *Resolution*: Investigated shell history and discovered the rebase was aimed at removing `Co-Authored-By: Claude` trailers. Aborted the conflicting merge rebase (`git rebase --abort`). Since the Claude co-author trailers were only present on the linear commits *after* the merge (`17a58c5` and `dde4751`), ran a targeted linear rebase across `HEAD~3` to strip the trailers cleanly without any merge conflicts.
-
+   - _Problem_: An interactive rebase (`git rebase -i HEAD~5`) was left paused with merge conflicts on `main.py`. The rebase attempted to flatten an older merge commit (`25bca82 Merge origin/main: languages, modes, SRS, TTS`), trying to replay already-merged commits.
+   - _Resolution_: Investigated shell history and discovered the rebase was aimed at removing `Co-Authored-By: Claude` trailers. Aborted the conflicting merge rebase (`git rebase --abort`). Since the Claude co-author trailers were only present on the linear commits _after_ the merge (`17a58c5` and `dde4751`), ran a targeted linear rebase across `HEAD~3` to strip the trailers cleanly without any merge conflicts.
