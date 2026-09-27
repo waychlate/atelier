@@ -666,7 +666,7 @@ if __name__ == "__main__":
     # unreachable from another laptop on the same network, which multiplayer
     # needs (one player's wand talks to the other's bridge, or both talk to
     # a third laptop hosting this). Running this file directly binds
-    # config.HOST (default 0.0.0.0, override with the HOST env var) instead.
+    # config.SERVER_HOST (default 0.0.0.0, override with SERVER_HOST) instead.
     import uvicorn
 
-    uvicorn.run(app, host=config.HOST, port=config.PORT)
+    uvicorn.run(app, host=config.SERVER_HOST, port=config.PORT)
