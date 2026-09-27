@@ -1,8 +1,13 @@
-# CLAUDE.md — Air-Writing Language Game (Web/Server Side)
+# CLAUDE.md — Atelier Language Game (Web/Server Side)
 
 This file gives Claude Code context for working on the **server and frontend** for this
 hackathon project. Hardware/firmware is being built separately by a teammate — this repo
 only needs to consume the data contract described below, not the ESP32 code itself.
+
+> **Current state differs from parts of this spec:** the game is now single-player (not
+> 2-player/HP), scoring uses a CNN + strict stroke validation (not DTW), and the real
+> firmware contract is one POST per letter with `pen` flags. `checkpoint.md` holds current
+> decisions and supersedes older sections below.
 
 ## What this project is
 
@@ -10,6 +15,32 @@ A 2-player language-learning game. Each player has an ESP32 with an acceleromete
 buzzer, and a button. Players draw a letter in the air; the device buffers motion data and
 sends it here. This server scores accuracy, drives a versus-style HP/points system, and
 displays both players' reconstructed drawings live on a website.
+
+## Hackathon tracks
+
+**Primary: Microsoft.** Check every design choice against its rules:
+- The core experience must not be a chatbot or depend on a chat window.
+- AI should be part of the experience, not the entire experience.
+- The demo must show someone accomplishing or improving at a real task. For us, that
+  means writing letters/words from memory, with spaced repetition and progress stats as
+  evidence.
+
+**Secondary targets:**
+- **ElevenLabs:** TTS reads each prompt aloud. This enables a recall-from-audio mode
+  (hear a word/kanji reading, write it from memory). Cache one clip per prompt.
+- **Gemini:** behind-the-scenes only, never a chat UI. Use it to grade scripts the
+  EMNIST CNN can't handle (send the rasterized drawing to Gemini vision, which is the path
+  to Japanese), and for short targeted tips after repeated misses on the same item.
+- **Tiger Data:** an `attempts` time-series hypertable (user, item, score, per-stroke
+  scores, timestamp), with continuous aggregates powering the improvement-over-time charts.
+
+**Skipped:** Solana (nothing natural to put on-chain) and MongoDB Atlas (overlaps Tiger
+Data, which fits time-series progress better).
+
+**Rule:** sponsor integrations must degrade gracefully on flaky venue Wi-Fi. That means
+cached TTS audio, the local CNN as the Latin grader, and a local fallback if the DB is
+unreachable. The core draw → score → progress loop must never hard-depend on a sponsor
+API.
 
 ## Division of responsibility
 

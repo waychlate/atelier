@@ -2,36 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Air-Writing Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atelier</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="game">
-    <div class="banner">
-      <span class="label">Draw the letter:</span>
-      <span id="target-letter" class="target-letter">-</span>
+
+  <section id="screen-menu" class="screen active">
+    <h1 class="game-title">Atelier</h1>
+    <p class="subtitle">Draw letters from memory. Spaced repetition tracks what to practice.</p>
+
+    <div class="menu-actions">
+      <button id="play-btn" class="primary-btn">Play</button>
+      <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">&#9881;</button>
     </div>
+    <button id="stats-nav-btn" class="link-btn">View stats</button>
+  </section>
 
-    <div class="canvas-wrap">
-      <canvas id="canvas" width="480" height="480"></canvas>
-      <img id="hint-image" class="hint-image hidden" alt="stroke pattern hint" />
-      <canvas id="cursor-canvas" class="cursor-canvas" width="480" height="480"></canvas>
-    </div>
+  <section id="screen-play" class="screen">
+    <button class="back-btn" data-back="menu">&larr; Menu</button>
 
-    <div id="per-stroke-scores" class="per-stroke-scores"></div>
+    <div class="layout">
+      <div class="game">
+        <div class="banner">
+          <span class="label">Draw the letter:</span>
+          <span id="target-letter" class="target-letter">-</span>
+          <button id="replay-audio-btn" class="icon-btn play-audio-btn hidden" aria-label="Replay sound" title="Replay sound">&#128264;</button>
+        </div>
 
-    <div class="stats">
-      <div class="accuracy">
-        <span class="label">Last accuracy:</span>
-        <span id="accuracy">-</span>
+        <div class="play-audio-row">
+          <span class="setting-label">Volume</span>
+          <input type="range" id="play-audio-slider" min="0" max="100" value="70" />
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="480" height="480"></canvas>
+          <img id="hint-image" class="hint-image hidden" alt="stroke pattern hint" />
+          <canvas id="cursor-canvas" class="cursor-canvas" width="480" height="480"></canvas>
+        </div>
+
+        <div id="per-stroke-scores" class="per-stroke-scores"></div>
+
+        <div class="stats-row">
+          <div>
+            <span class="label">Last accuracy:</span>
+            <span id="accuracy">-</span>
+            <span id="grade" class="grade"></span>
+          </div>
+          <div>
+            <span class="label">Session score:</span>
+            <span id="cumulative-score">0</span>
+          </div>
+        </div>
+
+        <button id="next-round-btn">Skip letter</button>
       </div>
-      <div class="score">
-        <span class="label">Score:</span>
-        <span id="cumulative-score">0</span>
-      </div>
     </div>
+  </section>
 
-    <button id="next-round-btn">Next Round</button>
+  <section id="screen-stats" class="screen">
+    <button class="back-btn" data-back="menu">&larr; Menu</button>
+
+    <div class="stats-page">
+      <div class="progress-header">
+        <h2>Progress</h2>
+        <span id="source" class="source"></span>
+      </div>
+
+      <div id="language-tabs" class="tabs"></div>
+
+      <div class="progress-sub">
+        <span id="total-reviews">0</span> reviews
+      </div>
+
+      <div id="weakest-callout" class="callout hidden">
+        Focus on: <span id="weakest-list"></span>
+      </div>
+
+      <table class="letters">
+        <thead>
+          <tr><th></th><th>Status</th><th>Recent</th><th>Avg</th><th>Next</th></tr>
+        </thead>
+        <tbody id="letters-body"></tbody>
+      </table>
+
+      <h3>Accuracy over time</h3>
+      <canvas id="timeline" width="480" height="160"></canvas>
+      <div id="timeline-empty" class="empty">No attempts yet</div>
+
+      <button id="reset-progress-btn" class="secondary">Reset progress for this language</button>
+    </div>
+  </section>
+
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="modal">
+      <h2>Settings</h2>
+
+      <div class="setting-group">
+        <span class="setting-label">Language</span>
+        <div id="language-options" class="option-row"></div>
+      </div>
+
+      <div class="setting-group">
+        <span class="setting-label">Mode</span>
+        <div id="mode-options" class="option-row"></div>
+      </div>
+
+      <div class="setting-group">
+        <label class="setting-label" for="audio-slider">Audio volume</label>
+        <input type="range" id="audio-slider" min="0" max="100" value="70" />
+      </div>
+
+      <div class="setting-group">
+        <span class="setting-label">Theme</span>
+        <div class="option-row">
+          <button class="theme-option" data-theme="dark">Dark</button>
+          <button class="theme-option" data-theme="light">Light</button>
+        </div>
+      </div>
+
+      <button id="settings-close-btn" class="secondary">Close</button>
+    </div>
   </div>
 
   <script src="app.js" defer></script>

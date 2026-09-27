@@ -17,3 +17,9 @@ esp32/include/config.h
 
 # Raw stroke recordings (RECORD_DIR)
 web/server/recordings/
+
+# Secrets (DATABASE_URL etc.)
+.env
+
+# Generated TTS audio cache (regenerated on first request per letter)
+web/server/tts_cache/

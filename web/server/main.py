@@ -52,11 +52,14 @@ app = FastAPI()
 
 game_state = GameState()
 model = None
+latin_model = None
+hiragana_model = None
 db: TigerStore | None = None
 ws_clients: set[WebSocket] = set()
 background_tasks: set[asyncio.Task] = set()
 
 MODEL_PATH = Path(__file__).parent / "model" / "emnist_cnn.pt"
+HIRAGANA_MODEL_PATH = Path(__file__).parent / "model" / "hiragana_cnn.pt"
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 # Tracks wand orientation between /stroke/live calls for the live cursor.
@@ -81,8 +84,25 @@ def record_packet(packet: StrokePacket) -> None:
 
 @app.on_event("startup")
 async def on_startup():
-    global model, db
+    global model, latin_model, hiragana_model, db
     model = scoring.load_model(MODEL_PATH)
+    latin_model = model
+
+    if HIRAGANA_MODEL_PATH.exists():
+        try:
+            hiragana_model = scoring.load_model(
+                HIRAGANA_MODEL_PATH, num_classes=len(scoring.HIRAGANA_LETTER_TO_INDEX)
+            )
+            log.info("Hiragana CNN loaded: %s", HIRAGANA_MODEL_PATH)
+        except Exception as e:
+            hiragana_model = None
+            log.warning("Hiragana CNN failed to load, Japanese unavailable: %s", e)
+    else:
+        log.warning("Hiragana model not found at %s; Japanese unavailable", HIRAGANA_MODEL_PATH)
+
+    if hiragana_model is None and "japanese" in config.LANGUAGES:
+        config.LANGUAGES["japanese"].enabled = False
+
     if config.DATABASE_URL:
         try:
             db = await TigerStore.connect(config.DATABASE_URL)
@@ -174,11 +194,11 @@ def get_languages() -> LanguagesResponse:
 @app.post("/language/{code}")
 async def set_language(code: str) -> RoundStartMessage:
     """Switch the active deck. Only enabled languages are playable — see
-    config.Language.enabled (Japanese is plumbing-only for now)."""
+    config.Language.enabled."""
     lang = config.LANGUAGES.get(code)
     if lang is None:
         raise HTTPException(404, f"unknown language {code!r}")
-    if not lang.enabled:
+    if not lang.enabled or (code == "japanese" and hiragana_model is None):
         raise HTTPException(400, f"{code!r} isn't playable yet")
     msg = game_state.set_language(code)
     await broadcast(msg)
@@ -395,6 +415,13 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     # accel-only double integration for packets without gyro.
     gyro_paths = pointer_strokes(packet) if trajectory.has_gyro(packet.samples) else None
 
+    if game_state.language == "japanese":
+        active_model = hiragana_model
+        letter_to_index = scoring.HIRAGANA_LETTER_TO_INDEX
+    else:
+        active_model = latin_model or model
+        letter_to_index = scoring.LETTER_TO_INDEX
+
     if not stroke_runs:
         accuracy = 0.0
         display_paths = []
@@ -412,15 +439,23 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
             trajectory.place_in_bbox(path, strokes.stroke_bbox(stroke))
             for path, stroke in zip(raw_paths, strokes.MULTI_STROKE_LETTERS[letter.upper()])
         ]
+    elif active_model is None:
+        accuracy = 0.0
+        display_paths = gyro_paths if gyro_paths is not None else []
     elif gyro_paths is not None:
         accuracy = scoring.score_stroke(
-            [point for path in gyro_paths for point in path], letter, model
+            [point for path in gyro_paths for point in path],
+            letter,
+            active_model,
+            letter_to_index=letter_to_index,
         )
         display_paths = gyro_paths
     else:
         merged = _reindex([s for run in stroke_runs for s in run], packet.sample_rate_hz)
         path = trajectory.reconstruct_path(merged, packet.sample_rate_hz)
-        accuracy = scoring.score_stroke(path, letter, model)
+        accuracy = scoring.score_stroke(
+            path, letter, active_model, letter_to_index=letter_to_index
+        )
         display_paths = [path]
 
     result, card = game_state.submit(letter, accuracy, display_paths, per_stroke_scores)
