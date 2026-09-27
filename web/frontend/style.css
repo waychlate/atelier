@@ -197,6 +197,18 @@ button:disabled {
 
 .canvas-wrap {
   position: relative;
+  border-radius: 8px;
+  transition: box-shadow 0.15s ease;
+}
+
+/* Placeholder pass/fail flash while a result is held on screen (see
+   RESULT_DISPLAY_MS in app.js) - restyle freely, this is just a hook. */
+.canvas-wrap.result-pass {
+  box-shadow: 0 0 0 4px #4fc3f7aa;
+}
+
+.canvas-wrap.result-fail {
+  box-shadow: 0 0 0 4px #ef5350aa;
 }
 
 #canvas {

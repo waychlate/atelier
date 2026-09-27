@@ -3,6 +3,7 @@ const accuracyEl = document.getElementById("accuracy");
 const cumulativeScoreEl = document.getElementById("cumulative-score");
 const nextRoundBtn = document.getElementById("next-round-btn");
 const canvas = document.getElementById("canvas");
+const canvasWrap = document.querySelector(".canvas-wrap");
 const ctx = canvas.getContext("2d");
 const hintImage = document.getElementById("hint-image");
 const cursorCanvas = document.getElementById("cursor-canvas");
@@ -32,8 +33,15 @@ const GRADE_LABELS = {
   easy: "Easy",
 };
 const HINT_TIMEOUT_MS = 5000;
+// How long the just-submitted drawing + pass/fail state stays up before the
+// canvas clears and the next letter's prompt begins. Was previously instant
+// (target letter and hint switched the moment the result arrived), which
+// meant the old drawing sat on screen, unexplained, through the whole next
+// attempt - looked like a stuck/mismatched image.
+const RESULT_DISPLAY_MS = 2200;
 
 let hintTimer = null;
+let resultTimer = null;
 let currentLetter = null;
 let activeLanguage = "latin"; // what's actually being played (from round_start/languages)
 let activeMode = "learn"; // "learn" (stroke hints) or "blind" (audio prompt only)
@@ -224,20 +232,17 @@ function renderModeOptions() {
 // every sample blew tiny movements up to full size. Adjustable live with the
 // + / - keys (remembered per browser) so it can be tuned to how someone
 // actually holds the wand.
-const DEFAULT_PX_PER_RAD = 90;
+const DEFAULT_PX_PER_RAD = 220;
 let cursorPxPerRad = DEFAULT_PX_PER_RAD;
 try {
   cursorPxPerRad = Number(localStorage.getItem("cursorPxPerRad")) || DEFAULT_PX_PER_RAD;
 } catch {}
 // Fraction of the way the displayed cursor moves toward each new reading
 // (50 Hz), smoothing out hand tremor and sensor noise at a small lag.
-const CURSOR_SMOOTHING = 0.3;
-// While no letter is in progress, the view slowly re-centers on the wand
-// (this fraction of the remaining distance per 50 Hz sample, ~1 s to
-// settle), so wherever you point becomes the middle and slow gyro heading
-// drift never walks the cursor off screen. Frozen during a letter so
-// strokes keep their positions relative to each other.
-const RECENTER_RATE = 0.04;
+const CURSOR_SMOOTHING = 0.6;
+// Disabled: view no longer auto-drifts back to the wand while idle.
+// Once you point somewhere, it stays there until you start the next letter.
+const RECENTER_RATE = 0;
 
 const cursor = { x: 0, y: 0, pen: false, seen: false }; // smoothed position
 const view = { x: 0, y: 0 };
@@ -594,6 +599,8 @@ function connect() {
     const msg = JSON.parse(event.data);
 
     if (msg.type === "round_start") {
+      if (resultTimer) clearTimeout(resultTimer);
+      canvasWrap.classList.remove("result-pass", "result-fail");
       activeLanguage = msg.language;
       activeMode = msg.mode;
       currentLetter = msg.target_letter;
@@ -604,18 +611,29 @@ function connect() {
       startPrompt();
     } else if (msg.type === "stroke_result") {
       if (hintTimer) clearTimeout(hintTimer);
+      if (resultTimer) clearTimeout(resultTimer);
       hideHint();
       endLetter();
       activeMode = msg.mode;
       accuracyEl.textContent = msg.accuracy.toFixed(1);
       cumulativeScoreEl.textContent = msg.cumulative_score;
-      currentLetter = msg.next_letter;
-      targetLetterEl.textContent = msg.next_letter;
       gradeEl.textContent = `${GRADE_LABELS[msg.grade]} · ${msg.letter} back in ${msg.next_review_in}`;
       gradeEl.className = `grade ${msg.grade}`;
       updatePerStrokeScores(msg.per_stroke_scores);
       drawPaths(msg.paths);
-      startPrompt();
+      // Hold this result on screen (drawing + pass/fail flag) before moving
+      // on - canvasWrap gets "result-pass"/"result-fail" for styling; the
+      // banner/hint/canvas only switch to the next letter once this timer
+      // fires, so the old drawing is never up during the next attempt.
+      canvasWrap.classList.toggle("result-fail", msg.grade === "again");
+      canvasWrap.classList.toggle("result-pass", msg.grade !== "again");
+      resultTimer = setTimeout(() => {
+        canvasWrap.classList.remove("result-pass", "result-fail");
+        clearCanvas();
+        currentLetter = msg.next_letter;
+        targetLetterEl.textContent = msg.next_letter;
+        startPrompt();
+      }, RESULT_DISPLAY_MS);
     } else if (msg.type === "cursor") {
       onCursor(msg);
     }
