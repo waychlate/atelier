@@ -2,6 +2,9 @@ fastapi
 uvicorn[standard]
 pydantic
 numpy
+httpx
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 pillow
+psycopg[binary]
+psycopg-pool

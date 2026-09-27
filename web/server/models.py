@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -30,13 +31,20 @@ class StrokePacket(BaseModel):
 class RoundStartMessage(BaseModel):
     type: Literal["round_start"] = "round_start"
     round_id: int
+    language: str
     target_letter: str
+    mode: str = "learn"
 
 
 class StrokeResultMessage(BaseModel):
     type: Literal["stroke_result"] = "stroke_result"
     round_id: int
+    language: str
+    mode: str
+    letter: str
     accuracy: float
+    grade: Literal["again", "hard", "good", "easy"]
+    next_review_in: int  # reviews until this letter is due again
     cumulative_score: int
     paths: list[list[tuple[float, float]]]  # one per submitted stroke, positioned for display
     per_stroke_scores: Optional[list[float]] = None  # only for strict multi-stroke letters
@@ -48,3 +56,54 @@ class ESP32FeedbackResponse(BaseModel):
     feedback_code: Literal["good", "ok", "bad"]
     round_id: int
     cumulative_score: int
+
+
+class LetterStats(BaseModel):
+    letter: str
+    status: Literal["new", "learning", "review"]
+    attempts: int = 0
+    avg_score: Optional[float] = None
+    best_score: Optional[float] = None
+    recent: list[float] = []  # last 10 scores, oldest first
+    ease: Optional[float] = None
+    due_in: Optional[int] = None  # reviews until due; <= 0 means due now
+    lapses: int = 0
+
+
+class TimelinePoint(BaseModel):
+    bucket: datetime
+    avg_score: float
+    attempts: int
+
+
+class StatsResponse(BaseModel):
+    player_id: str
+    language: str
+    source: Literal["tiger", "local"]
+    total_reviews: int
+    letters: list[LetterStats]
+    timeline: list[TimelinePoint]
+
+
+class LanguageInfo(BaseModel):
+    code: str
+    label: str
+    enabled: bool
+    letter_count: int
+
+
+class LanguagesResponse(BaseModel):
+    active: str
+    languages: list[LanguageInfo]
+
+
+class ModeInfo(BaseModel):
+    code: str
+    label: str
+    description: str
+    enabled: bool
+
+
+class ModesResponse(BaseModel):
+    active: str
+    modes: list[ModeInfo]

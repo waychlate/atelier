@@ -114,6 +114,95 @@ MULTI_STROKE_LETTERS: dict[str, list[Stroke]] = {
         # descender, straight down from the bottom of the bowl
         Stroke([(0.5, 0.32), (0.5, 0.0)], "down"),
     ],
+    "B": [
+        Stroke([(0, 1), (0, 0)], "down"),  # stem, top -> bottom
+        Stroke(
+            _circle_points((0.35, 0.72), 0.22, start_angle_deg=90, rotation="clockwise"),
+            "clockwise",
+            shape="circle",
+        ),  # upper bump
+        Stroke(
+            _circle_points((0.35, 0.28), 0.22, start_angle_deg=90, rotation="clockwise"),
+            "clockwise",
+            shape="circle",
+        ),  # lower bump
+    ],
+    "D": [
+        Stroke([(0, 1), (0, 0)], "down"),  # stem, top -> bottom
+        Stroke(
+            _circle_points((0.35, 0.5), 0.4, start_angle_deg=90, rotation="clockwise"),
+            "clockwise",
+            shape="circle",
+        ),  # bowl
+    ],
+    "F": [
+        Stroke([(0, 1), (0, 0)], "down"),        # stem, top -> bottom
+        Stroke([(0, 1), (0.8, 1)], "right"),     # top bar
+        Stroke([(0, 0.5), (0.55, 0.5)], "right"),  # middle bar
+    ],
+    "I": [
+        Stroke([(0.5, 1), (0.5, 0)], "down"),  # stem, top -> bottom
+    ],
+    "K": [
+        Stroke([(0, 1), (0, 0)], "down"),          # stem, top -> bottom
+        Stroke([(0, 0.5), (1, 1)], "up_right"),    # upper diagonal, middle -> top-right
+        Stroke([(0, 0.5), (1, 0)], "down_right"),  # lower diagonal, middle -> bottom-right
+    ],
+    "L": [
+        Stroke([(0, 1), (0, 0)], "down"),   # stem, top -> bottom
+        Stroke([(0, 0), (0.8, 0)], "right"),  # bottom bar
+    ],
+    "N": [
+        Stroke([(0, 1), (0, 0)], "down"),          # left vertical, top -> bottom
+        Stroke([(0, 1), (1, 0)], "down_right"),    # diagonal, top-left -> bottom-right
+        Stroke([(1, 1), (1, 0)], "down"),          # right vertical, top -> bottom
+    ],
+    "O": [
+        Stroke(
+            _circle_points((0.5, 0.5), 0.45, start_angle_deg=90, rotation="counterclockwise"),
+            "counterclockwise",
+            shape="circle",
+        ),
+    ],
+    "P": [
+        Stroke([(0, 1), (0, 0)], "down"),  # stem, top -> bottom
+        Stroke(
+            _circle_points((0.35, 0.75), 0.25, start_angle_deg=90, rotation="clockwise"),
+            "clockwise",
+            shape="circle",
+        ),  # bowl (upper only)
+    ],
+    "Q": [
+        Stroke(
+            _circle_points((0.5, 0.55), 0.4, start_angle_deg=90, rotation="counterclockwise"),
+            "counterclockwise",
+            shape="circle",
+        ),  # bowl
+        Stroke([(0.5, 0.3), (0.8, 0.0)], "down_right"),  # tail
+    ],
+    "R": [
+        Stroke([(0, 1), (0, 0)], "down"),  # stem, top -> bottom
+        Stroke(
+            _circle_points((0.35, 0.75), 0.25, start_angle_deg=90, rotation="clockwise"),
+            "clockwise",
+            shape="circle",
+        ),  # bowl (upper only)
+        Stroke([(0.3, 0.45), (0.9, 0.0)], "down_right"),  # leg
+    ],
+    "X": [
+        Stroke([(0, 1), (1, 0)], "down_right"),  # top-left -> bottom-right
+        Stroke([(1, 1), (0, 0)], "down_left"),   # top-right -> bottom-left
+    ],
+    "Y": [
+        Stroke([(0, 1), (0.5, 0.5)], "down_right"),   # left arm -> center
+        Stroke([(1, 1), (0.5, 0.5)], "down_left"),    # right arm -> center
+        Stroke([(0.5, 0.5), (0.5, 0)], "down"),       # stem, center -> bottom
+    ],
+    "Z": [
+        Stroke([(0, 1), (1, 1)], "right"),       # top bar
+        Stroke([(1, 1), (0, 0)], "down_left"),   # diagonal, top-right -> bottom-left
+        Stroke([(0, 0), (1, 0)], "right"),       # bottom bar
+    ],
 }
 
 # Single-stroke letters: drawn as one continuous motion, no natural pen-lift
@@ -121,6 +210,11 @@ MULTI_STROKE_LETTERS: dict[str, list[Stroke]] = {
 SINGLE_STROKE_LETTERS: dict[str, list[tuple[float, float]]] = {
     "M": [(0, 0), (0, 1), (0.5, 0.4), (1, 1), (1, 0)],
     "S": [(1, 1), (0, 0.85), (0, 0.55), (1, 0.45), (1, 0.15), (0, 0)],
+    "C": [(0.9, 0.85), (0.6, 1), (0.2, 0.85), (0, 0.5), (0.2, 0.15), (0.6, 0), (0.9, 0.15)],
+    "J": [(0.6, 1), (0.6, 0.3), (0.55, 0.1), (0.35, 0), (0.15, 0.05), (0.05, 0.25)],
+    "U": [(0, 1), (0, 0.25), (0.15, 0.05), (0.5, 0), (0.85, 0.05), (1, 0.25), (1, 1)],
+    "V": [(0, 1), (0.5, 0), (1, 1)],
+    "W": [(0, 1), (0.25, 0), (0.5, 0.5), (0.75, 0), (1, 1)],
 }
 
 
