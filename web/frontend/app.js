@@ -966,6 +966,202 @@ async function refreshStats() {
 
 // ---------- websocket ----------
 
+// ---------- versus screen ----------
+
+const versusStartBtn = document.getElementById("versus-start-btn");
+const versusLeaveBtn = document.getElementById("versus-leave-btn");
+const versusRematchBtn = document.getElementById("versus-rematch-btn");
+const versusLetterEl = document.getElementById("versus-letter");
+const versusIntermissionEl = document.getElementById("versus-intermission");
+const versusWinnerBannerEl = document.getElementById("versus-winner-banner");
+const versusWinnerTextEl = document.getElementById("versus-winner-text");
+
+// True whenever a versus match exists server-side (from the last versus_state
+// heard), regardless of which screen is showing - gates whether "cursor"
+// messages feed the solo play canvas or the per-wand versus canvases below,
+// since both draw from the same /ws stream.
+let versusActive = false;
+let versusMaxHp = 101;
+// player_id -> slot index (0 or 1), in join order - fixed for the life of a
+// match so a player doesn't jump sides mid-match.
+let versusSlotOf = {};
+
+// One instance per slot (0, 1). Mirrors the solo canvas's cursor/liveStrokes
+// logic (see onCursor/drawCursor above) but as a reusable object instead of
+// module-level globals, since versus needs two independent copies running
+// at once. Shares cursorPxPerRad/CURSOR_SMOOTHING with solo play - same
+// wand, same feel, same sensitivity control (Settings, +/-).
+function makeVersusRenderer(canvas) {
+  const ctx = canvas.getContext("2d");
+  const cursor = { x: 0, y: 0, pen: false, seen: false };
+  const view = { x: 0, y: 0 };
+  let liveStrokes = [];
+  let letterActive = false;
+
+  function toCanvasXY(x, y) {
+    return [
+      canvas.width / 2 + (x - view.x) * cursorPxPerRad,
+      canvas.height / 2 - (y - view.y) * cursorPxPerRad,
+    ];
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!cursor.seen) return;
+    ctx.strokeStyle = "#d9b34d";
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.5;
+    for (const stroke of liveStrokes) {
+      ctx.beginPath();
+      stroke.forEach(([x, y], i) => {
+        const [cx, cy] = toCanvasXY(x, y);
+        if (i === 0) ctx.moveTo(cx, cy);
+        else ctx.lineTo(cx, cy);
+      });
+      ctx.stroke();
+    }
+    let [cx, cy] = toCanvasXY(cursor.x, cursor.y);
+    cx = Math.min(Math.max(cx, 6), canvas.width - 6);
+    cy = Math.min(Math.max(cy, 6), canvas.height - 6);
+    ctx.globalAlpha = cursor.pen ? 0.9 : 0.35;
+    ctx.fillStyle = "#d9b34d";
+    ctx.beginPath();
+    ctx.arc(cx, cy, cursor.pen ? 6 : 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  return {
+    onCursor(msg) {
+      if (!cursor.seen) {
+        cursor.x = view.x = msg.x;
+        cursor.y = view.y = msg.y;
+        cursor.seen = true;
+      }
+      cursor.x += (msg.x - cursor.x) * CURSOR_SMOOTHING;
+      cursor.y += (msg.y - cursor.y) * CURSOR_SMOOTHING;
+      if (msg.letter_start) {
+        letterActive = true;
+        liveStrokes = [];
+      }
+      if (letterActive && msg.pen) {
+        if (!cursor.pen || liveStrokes.length === 0) liveStrokes.push([]);
+        liveStrokes[liveStrokes.length - 1].push([cursor.x, cursor.y]);
+      }
+      cursor.pen = msg.pen;
+      render();
+    },
+    resetTrail() {
+      letterActive = false;
+      liveStrokes = [];
+      render();
+    },
+    clear() {
+      cursor.seen = false;
+      this.resetTrail();
+    },
+  };
+}
+
+const versusRenderers = [
+  makeVersusRenderer(document.getElementById("versus-canvas-0")),
+  makeVersusRenderer(document.getElementById("versus-canvas-1")),
+];
+
+function hpClass(hp, maxHp) {
+  const frac = hp / maxHp;
+  if (frac <= 0.3) return "hp-low";
+  if (frac <= 0.6) return "hp-mid";
+  return "";
+}
+
+function resetVersusUi() {
+  versusSlotOf = {};
+  versusWinnerBannerEl.classList.add("hidden");
+  for (let slot = 0; slot < 2; slot++) {
+    document.getElementById(`versus-name-${slot}`).textContent =
+      "Waiting for a wand…";
+    document.getElementById(`versus-status-${slot}`).textContent = "";
+    document.getElementById(`versus-status-${slot}`).className =
+      "versus-status";
+    document
+      .getElementById(`versus-hp-fill-${slot}`)
+      .style.setProperty("width", "100%");
+    versusRenderers[slot].clear();
+  }
+}
+
+function renderVersusState(state) {
+  versusActive = true;
+  versusMaxHp = state.max_hp;
+  versusLetterEl.textContent = state.letter;
+  versusIntermissionEl.classList.toggle("hidden", state.opens_in_ms <= 0);
+
+  for (const player of state.players) {
+    if (!(player.player_id in versusSlotOf)) {
+      versusSlotOf[player.player_id] = Object.keys(versusSlotOf).length;
+    }
+    const slot = versusSlotOf[player.player_id];
+    document.getElementById(`versus-name-${slot}`).textContent =
+      player.player_id;
+    const fill = document.getElementById(`versus-hp-fill-${slot}`);
+    fill.style.width = `${Math.max(0, (player.hp / state.max_hp) * 100)}%`;
+    fill.className = `hp-fill ${hpClass(player.hp, state.max_hp)}`;
+  }
+
+  if (state.winner) {
+    versusWinnerTextEl.textContent = `${state.winner} wins the match!`;
+    versusWinnerBannerEl.classList.remove("hidden");
+  } else {
+    versusWinnerBannerEl.classList.add("hidden");
+  }
+}
+
+const VERSUS_STATUS_LABELS = {
+  won: "Won the round!",
+  failed: "Missed — try again in a moment",
+  locked: "Still cooling down…",
+  stale: "Too slow — that letter already moved on",
+  waiting: "Waiting for the other wand to join…",
+  full: "",
+  over: "Match is over",
+};
+
+function renderVersusAttempt(msg) {
+  const slot = versusSlotOf[msg.player_id];
+  if (slot === undefined) return;
+  const statusEl = document.getElementById(`versus-status-${slot}`);
+  statusEl.textContent = VERSUS_STATUS_LABELS[msg.status] || msg.status;
+  statusEl.className = `versus-status status-${msg.status}`;
+
+  const wrap = document
+    .getElementById(`versus-canvas-${slot}`)
+    .closest(".versus-canvas-wrap");
+  wrap.classList.remove("result-pass", "result-fail");
+  if (msg.status === "won") wrap.classList.add("result-pass");
+  else if (msg.status === "failed") wrap.classList.add("result-fail");
+  setTimeout(() => wrap.classList.remove("result-pass", "result-fail"), 700);
+}
+
+versusStartBtn.addEventListener("click", async () => {
+  resetVersusUi();
+  await fetch("/versus/start", { method: "POST" });
+  showScreen("versus");
+});
+
+versusRematchBtn.addEventListener("click", async () => {
+  resetVersusUi();
+  await fetch("/versus/start", { method: "POST" });
+});
+
+versusLeaveBtn.addEventListener("click", async () => {
+  versusActive = false;
+  await fetch("/versus/stop", { method: "POST" });
+  showScreen("menu");
+});
+
 function connect() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocol}://${location.host}/ws`);
@@ -974,6 +1170,13 @@ function connect() {
     const msg = JSON.parse(event.data);
 
     if (msg.type === "round_start") {
+      // Broadcast by /versus/stop too (back to the solo round where it left
+      // off) - if we were mid-match, that's our cue it ended from elsewhere
+      // (another browser tab, or the match simply finishing).
+      versusActive = false;
+      if (document.getElementById("screen-versus").classList.contains("active")) {
+        showScreen("menu");
+      }
       if (resultTimer) clearTimeout(resultTimer);
       canvasWrap.classList.remove("result-pass", "result-fail");
       activeLanguage = msg.language;
@@ -1011,7 +1214,16 @@ function connect() {
         startPrompt();
       }, RESULT_DISPLAY_MS);
     } else if (msg.type === "cursor") {
-      onCursor(msg);
+      if (versusActive) {
+        const slot = versusSlotOf[msg.player_id];
+        if (slot !== undefined) versusRenderers[slot].onCursor(msg);
+      } else {
+        onCursor(msg);
+      }
+    } else if (msg.type === "versus_state") {
+      renderVersusState(msg);
+    } else if (msg.type === "versus_attempt") {
+      renderVersusAttempt(msg);
     }
   };
 
