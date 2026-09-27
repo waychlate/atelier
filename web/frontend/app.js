@@ -111,6 +111,10 @@ function showScreen(name) {
   document.querySelectorAll(".screen").forEach((el) => {
     el.classList.toggle("active", el.id === `screen-${name}`);
   });
+  // Tabs live in the global header now (hoisted out of #screen-menu), so
+  // they need explicit show/hide tied to which screen is active instead of
+  // just being inside/outside a hidden section.
+  menuTabsEl.classList.toggle("hidden", name !== "menu");
   if (name === "stats") refreshStats();
 }
 
@@ -166,6 +170,7 @@ function onLoggedIn() {
 
 switchPlayerBtn.addEventListener("click", () => {
   currentPlayer = null;
+  currentPlayerEl.textContent = "";
   loginErrorEl.classList.add("hidden");
   showScreen("login");
 });
@@ -629,7 +634,7 @@ function drawPaths(paths) {
     return [cx, cy];
   };
 
-  ctx.strokeStyle = "#4fc3f7";
+  ctx.strokeStyle = "#d9b34d";
   ctx.lineWidth = 3;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
@@ -661,7 +666,7 @@ function drawCursor() {
   c.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
   if (!cursor.seen) return;
 
-  c.strokeStyle = "#4fc3f7";
+  c.strokeStyle = "#d9b34d";
   c.globalAlpha = 0.5;
   c.lineWidth = 3;
   c.lineJoin = "round";
@@ -681,7 +686,7 @@ function drawCursor() {
   cx = Math.min(Math.max(cx, 6), cursorCanvas.width - 6);
   cy = Math.min(Math.max(cy, 6), cursorCanvas.height - 6);
   c.globalAlpha = cursor.pen ? 0.9 : 0.35;
-  c.fillStyle = "#4fc3f7";
+  c.fillStyle = "#d9b34d";
   c.beginPath();
   c.arc(cx, cy, cursor.pen ? 6 : 5, 0, Math.PI * 2);
   c.fill();
@@ -747,15 +752,38 @@ function updatePerStrokeScores(scores) {
 // ---------- stats screen ----------
 
 function scoreColor(score) {
-  if (score >= 75) return "#4fc3f7";
+  if (score >= 75) return "#d9b34d";
   if (score >= 40) return "#ffb74d";
   return "#ef5350";
 }
 
+// Canvases are drawn at a fixed logical (CSS-pixel) size but their actual
+// pixel buffer is scaled by devicePixelRatio — otherwise a canvas whose CSS
+// size exceeds its width/height attributes (the timeline, stretched via
+// `width:100%`) gets upscaled/blurred by the browser, and even a
+// 1:1-sized one looks soft on a retina/high-DPI display. Callers use the
+// returned `width`/`height` (CSS pixels) for all layout math; the actual
+// pixel buffer and transform scale are handled here.
+function setupCanvasDPR(canvas, cssWidth, cssHeight) {
+  // Deliberately doesn't touch canvas.style.width/height: the timeline
+  // canvas's CSS display size is driven by `width:100%;height:auto` in
+  // style.css (based on the width/height *attributes*' ratio, which stay
+  // proportional even after scaling below) — setting an inline style here
+  // would pin it at whatever cssWidth was on the first call (e.g. while the
+  // stats screen is still hidden and clientWidth reads 0), permanently
+  // overriding the responsive CSS on every later, correctly-measured call.
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+
 function drawSparkline(cvs, scores) {
-  const c = cvs.getContext("2d");
-  const w = cvs.width;
-  const h = cvs.height;
+  const w = 80;
+  const h = 22;
+  const c = setupCanvasDPR(cvs, w, h);
   c.clearRect(0, 0, w, h);
   if (scores.length === 0) return;
   const barW = w / 10;
@@ -798,8 +826,6 @@ function renderLetters(letters) {
 
     const sparkTd = document.createElement("td");
     const spark = document.createElement("canvas");
-    spark.width = 80;
-    spark.height = 22;
     drawSparkline(spark, l.recent);
     sparkTd.appendChild(spark);
 
@@ -829,9 +855,15 @@ function renderWeakest(letters) {
 }
 
 function renderTimeline(points) {
-  const c = timelineCanvas.getContext("2d");
-  const w = timelineCanvas.width;
-  const h = timelineCanvas.height;
+  // Canvas is CSS-stretched to fill its container (`width:100%` in
+  // style.css) but was previously drawn at a fixed low-res 480x160 pixel
+  // buffer, so the browser upscaled/blurred it — measure the actual
+  // rendered width and size the buffer to match (see setupCanvasDPR).
+  const cssWidth = timelineCanvas.clientWidth || 480;
+  const cssHeight = Math.round(cssWidth / 3); // preserve the original 480:160 (3:1) aspect ratio
+  const c = setupCanvasDPR(timelineCanvas, cssWidth, cssHeight);
+  const w = cssWidth;
+  const h = cssHeight;
   c.clearRect(0, 0, w, h);
   timelineEmpty.classList.toggle("hidden", points.length > 0);
   if (points.length === 0) return;
@@ -858,13 +890,13 @@ function renderTimeline(points) {
 
   // attempts per bucket as faint bars behind the line
   const barW = Math.max(4, Math.min(24, plotW / points.length / 2));
-  c.fillStyle = "rgba(79, 195, 247, 0.15)";
+  c.fillStyle = "rgba(217, 179, 77, 0.15)";
   points.forEach((p, i) => {
     const barH = (p.attempts / maxAttempts) * plotH * 0.5;
     c.fillRect(xAt(i) - barW / 2, pad.t + plotH - barH, barW, barH);
   });
 
-  c.strokeStyle = "#4fc3f7";
+  c.strokeStyle = "#d9b34d";
   c.lineWidth = 2;
   c.beginPath();
   points.forEach((p, i) => {
@@ -872,7 +904,7 @@ function renderTimeline(points) {
     else c.lineTo(xAt(i), yAt(p.avg_score));
   });
   c.stroke();
-  c.fillStyle = "#4fc3f7";
+  c.fillStyle = "#d9b34d";
   points.forEach((p, i) => {
     c.beginPath();
     c.arc(xAt(i), yAt(p.avg_score), 3, 0, Math.PI * 2);
@@ -992,6 +1024,23 @@ resetProgressBtn.addEventListener("click", async () => {
   cumulativeScoreEl.textContent = "0";
   refreshStats();
 });
+
+// ---------- background sparkle field ----------
+// All animation is CSS (@keyframes spark-drift) — this just scatters
+// randomized starting positions/timing once at load, so no per-frame JS.
+(function initParticleField() {
+  const field = document.getElementById("particle-field");
+  if (!field) return;
+  const COUNT = 28;
+  for (let i = 0; i < COUNT; i++) {
+    const spark = document.createElement("span");
+    spark.className = "spark";
+    spark.style.left = `${Math.random() * 100}%`;
+    spark.style.animationDuration = `${8 + Math.random() * 10}s`;
+    spark.style.animationDelay = `${Math.random() * 12}s`;
+    field.appendChild(spark);
+  }
+})();
 
 loadLanguages().then(renderPracticeLetters);
 loadModes();

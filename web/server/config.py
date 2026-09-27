@@ -16,9 +16,16 @@ PLAYER_ID = os.environ.get("PLAYER_ID", "player_1")
 
 # ElevenLabs TTS for Blind mode (play the letter's sound instead of showing a
 # stroke hint). Unset -> Blind mode stays locked in the UI, same pattern as
-# config.Language.enabled — see tts.py.
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "vTdzvS51qswyWt3mQvK3")
+ELEVENLABS_JA_VOICE_ID = os.environ.get("ELEVENLABS_JA_VOICE_ID", "v36jhKEfrKXRPHYQKYyU")
+
+
+def voice_id_for_language(language: str) -> str:
+    """Returns the appropriate ElevenLabs voice ID based on language."""
+    if language in ("japanese", "kanji"):
+        return ELEVENLABS_JA_VOICE_ID
+    return ELEVENLABS_VOICE_ID
 
 
 @dataclass

@@ -4,6 +4,78 @@ Living state-of-the-project doc for Claude sessions working on this repo. `CLAUD
 the original spec; this file tracks what's actually been decided and built since, so a
 fresh session doesn't have to re-derive it from conversation history.
 
+## Stats charts were blurry — canvas DPR/sizing fix
+
+The "Accuracy over time" timeline and per-letter sparklines (`app.js`) drew at a fixed
+low-res pixel buffer (canvas `width`/`height` attributes, e.g. 480x160) while CSS stretched
+the timeline to `width:100%` — the browser upscales/blurs a canvas whenever its CSS display
+size exceeds its actual pixel buffer, and a canvas whose buffer matches its CSS size 1:1
+still looks soft on any high-DPI/retina display. Fixed with `setupCanvasDPR(canvas,
+cssWidth, cssHeight)`: sizes the pixel buffer to `cssSize * devicePixelRatio` and scales the
+context via `setTransform`, while callers keep doing all layout math in CSS pixels.
+**Non-obvious gotcha hit while building this**: the first version also set
+`canvas.style.width/height` inline to pin the CSS display size — this broke the timeline,
+because when `renderTimeline()` first runs while `#screen-stats` is still hidden (e.g. from
+`onLoggedIn()`'s eager `refreshStats()` call), `clientWidth` reads `0`, falls back to 480,
+and that inline style then **permanently locks the canvas at 480px** on every later call
+too (inline style overrides the responsive `width:100%` CSS rule, and `clientWidth` just
+reports back whatever was last inline-styled). Fix: `setupCanvasDPR` never touches
+`style.width/height` — the timeline's CSS `width:100%;height:auto` stays in full control
+(the width/height *attributes* still define its aspect ratio even after DPR-scaling, so
+`height:auto` keeps computing correctly), and the sparklines instead get an explicit
+`width: 80px; height: 22px` in `style.css` (`.letters td canvas`) since nothing else was
+constraining their display size. Lesson for next time: if a canvas needs a fixed CSS
+display size, put it in a stylesheet rule, not `element.style.*` set from inside a function
+that might run before the element is actually visible/measurable.
+
+## Magic-themed UI/UX overhaul
+
+Dark mystical/gothic-academy reskin, decided via several rounds of clarifying questions
+(mood, layout scope, component depth, background, colors) rather than assumed — see plan
+history if the reasoning behind a choice is unclear later.
+
+- **Palette swap** (`:root` in `style.css`): background moved from flat `#111` to deep
+  indigo/purple (`--bg: #14091f`) with a subtle radial purple glow (`--bg-glow`) behind the
+  header. **Cyan (`#4fc3f7`) is fully retired as the interactive accent** — gold
+  (`--accent: #d9b34d`) replaces it everywhere: selected states, buttons, scores, chart
+  lines. Panels get a translucent gold border (`--panel-border`) instead of flat grey, for
+  a gilded-edge look. Light theme got its own coherent parchment/gold variant, not just an
+  inverted dark palette. Any component already using `var(--accent)`/`var(--chip-bg)`
+  tokens needed zero changes — only genuinely hardcoded hex (`#4fc3f7`, and its rgb form
+  `rgba(79,195,247,...)`) needed hunting down, in both `style.css` and `app.js` (cursor dot
+  fill, canvas stroke color, `scoreColor()`'s "good" threshold).
+- **Shared full-width header** (`.app-header` in `index.html`/`style.css`): one header
+  block, hoisted **outside** the `.screen` sections entirely (not duplicated per screen) —
+  centered "Atelier" title (still Makcasa-only; body text stays system-ui per the
+  readability decision, especially for the Stats table), `#current-player` pinned top-right
+  via CSS grid (`grid-template-columns: 1fr auto 1fr`). `#menu-tabs` also hoisted out of
+  `#screen-menu` into its own persistent full-width strip directly under the header, shown
+  only while the menu screen is active (`showScreen()` now toggles a `.hidden` class on it)
+  — this was necessary to avoid duplicate-id / per-screen-header duplication problems.
+  Actual screen content (letter grid, stats table, settings groups) still lives in a
+  `.screen-content` wrapper that keeps the old ~900px centered width — only the
+  header/background go edge-to-edge, per the "content shouldn't get harder to read" call.
+- **CSS-only particle field** (`.particle-field`/`.spark` in `style.css`, generated once in
+  `app.js`'s `initParticleField()`): ~28 small gold/white radial-gradient dots with
+  randomized `left`/`animation-delay`/`animation-duration`, animated purely via one
+  `@keyframes spark-drift` (drift upward + twinkle). No canvas, no per-frame JS — chosen
+  specifically so it doesn't compete with the app's existing drawing/cursor canvases.
+  Deliberately subtle (visible but not distracting) at 28 sparks; bump `COUNT` in
+  `initParticleField()` if it should read as more "alive."
+- **Play screen stays visually quiet on purpose** — canvas/cursor/hint-image styling
+  barely changed (just inherits the new neutral-dark `--canvas-bg`/`--canvas-border`), no
+  ornate frame, no particle-field interference — this was an explicit decision to protect
+  drawing-accuracy legibility over thematic consistency.
+- **Gemini's transition/animation mechanics were kept as-is** (`screen-fade-in`,
+  `panel-fade-in`, button hover/press transforms, `result-pass`/`result-fail` glow,
+  `grade-pop`) — only their colors were repointed to the new palette, no new animation
+  logic was added on top.
+- One gotcha hit during this pass: the tab-bar's background band was first hardcoded to a
+  dark-purple rgba (`rgba(30, 16, 48, 0.4)`), which looked muddy/wrong once Light theme was
+  actually screenshotted — fixed to `var(--chip-bg)` so it adapts per theme. Lesson: always
+  visually check a themed rgba against *both* themes, not just the one being actively
+  designed in.
+
 ## Accounts, Menu Tabs & Practice Configuration
 
 - **No-password player accounts.** `players` dict lives in `GameState` (source of truth,
@@ -141,9 +213,11 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
 ## External Services & Graceful Degradation
 
 - **ElevenLabs TTS**: Reads target prompt in Blind mode. Audio clips are cached locally in
-  `web/server/tts_cache/`. Requires `ELEVENLABS_API_KEY` and a custom voice ID in
-  `ELEVENLABS_VOICE_ID` (free-tier accounts require user-cloned voices rather than library
-  defaults). Unset key &rarr; Blind mode stays locked in UI.
+  `web/server/tts_cache/`. Requires `ELEVENLABS_API_KEY` and voice IDs:
+  - English/Latin: `ELEVENLABS_VOICE_ID` (`vTdzvS51qswyWt3mQvK3`).
+  - Japanese (Hiragana & Kanji): `ELEVENLABS_JA_VOICE_ID` (`v36jhKEfrKXRPHYQKYyU`).
+  - Routed dynamically via `config.voice_id_for_language(language)`.
+  - Unset API key &rarr; Blind mode stays locked in UI.
 - **Tiger Data (TimescaleDB)**: Optional persistence for `attempts` and SRS cards across
   restarts. Unset or unreachable `DATABASE_URL` &rarr; server runs purely in-memory via
   `GameState`.

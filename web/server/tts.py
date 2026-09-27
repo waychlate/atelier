@@ -40,10 +40,11 @@ async def get_or_generate(language: str, letter: str) -> bytes | None:
     if path.exists():
         return path.read_bytes()
 
+    voice_id = config.voice_id_for_language(language)
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{config.ELEVENLABS_VOICE_ID}",
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
                 headers={
                     "xi-api-key": config.ELEVENLABS_API_KEY,
                     "Accept": "audio/mpeg",

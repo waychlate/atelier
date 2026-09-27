@@ -7,8 +7,19 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <section id="screen-login" class="screen active">
+    <div class="particle-field" id="particle-field"></div>
+
+    <header class="app-header">
       <h1 class="game-title">Atelier⭑.ᐟ</h1>
+      <div class="app-header-user">
+        <span id="current-player" class="current-player"></span>
+      </div>
+    </header>
+
+    <div id="menu-tabs" class="tabs menu-tabs hidden"></div>
+
+    <section id="screen-login" class="screen active">
+      <div class="screen-content">
       <p class="subtitle">Sign up or log in</p>
 
       <form id="login-form" class="auth-form">
@@ -36,18 +47,14 @@
         />
         <button type="submit">Sign up</button>
       </form>
+      </div>
     </section>
 
     <section id="screen-menu" class="screen">
-      <div class="menu-header">
-        <h1 class="game-title">Atelier⭑.ᐟ</h1>
-        <span id="current-player" class="current-player"></span>
-      </div>
+      <div class="screen-content">
       <p class="subtitle">
         Draw letters from memory. Spaced repetition tracks what to practice.
       </p>
-
-      <div id="menu-tabs" class="tabs menu-tabs"></div>
 
       <div id="menu-panel-versus" class="menu-panel locked-panel hidden">
         <p class="placeholder-note">1v1 Versus — coming soon.</p>
@@ -140,9 +147,11 @@
           Switch player
         </button>
       </div>
+      </div>
     </section>
 
     <section id="screen-play" class="screen">
+      <div class="screen-content">
       <button class="back-btn" data-back="menu">&larr; Menu</button>
 
       <div class="layout">
@@ -204,9 +213,11 @@
           <button id="next-round-btn">Skip letter</button>
         </div>
       </div>
+      </div>
     </section>
 
     <section id="screen-stats" class="screen">
+      <div class="screen-content">
       <button class="back-btn" data-back="menu">&larr; Menu</button>
 
       <div class="stats-page">
@@ -245,6 +256,7 @@
         <button id="reset-progress-btn" class="secondary">
           Reset progress for this language
         </button>
+      </div>
       </div>
     </section>
 
