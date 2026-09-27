@@ -42,6 +42,13 @@ let languages = []; // cached GET /languages response
 let modes = []; // cached GET /modes response
 let promptAudio = null; // the Audio object for the current Blind-mode prompt
 
+// Blind mode is audio-recall: showing the letter next to the speaker icon
+// would give away the answer before the player even tries. Learn mode has
+// no such secrecy (the stroke hint already shows the shape).
+function showTargetLetter(letter) {
+  targetLetterEl.textContent = activeMode === "blind" ? "?" : letter;
+}
+
 // ---------- screen navigation ----------
 
 function showScreen(name) {
@@ -597,7 +604,7 @@ function connect() {
       activeLanguage = msg.language;
       activeMode = msg.mode;
       currentLetter = msg.target_letter;
-      targetLetterEl.textContent = msg.target_letter;
+      showTargetLetter(msg.target_letter);
       endLetter();
       clearCanvas();
       perStrokeScoresEl.innerHTML = "";
@@ -610,7 +617,7 @@ function connect() {
       accuracyEl.textContent = msg.accuracy.toFixed(1);
       cumulativeScoreEl.textContent = msg.cumulative_score;
       currentLetter = msg.next_letter;
-      targetLetterEl.textContent = msg.next_letter;
+      showTargetLetter(msg.next_letter);
       gradeEl.textContent = `${GRADE_LABELS[msg.grade]} · ${msg.letter} back in ${msg.next_review_in}`;
       gradeEl.className = `grade ${msg.grade}`;
       updatePerStrokeScores(msg.per_stroke_scores);

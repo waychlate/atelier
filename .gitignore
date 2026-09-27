@@ -23,3 +23,4 @@ web/server/recordings/
 
 # Generated TTS audio cache (regenerated on first request per letter)
 web/server/tts_cache/
+
