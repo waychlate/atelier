@@ -138,6 +138,57 @@ def reconstruct_pointer_path(
     return [(float(a), p[1]) for a, p in zip(azimuths, points)]
 
 
+class LiveOrientationTracker:
+    """Incremental version of reconstruct_pointer_path's orientation
+    tracking, for a live cursor: samples arrive one at a time over
+    /stroke/live as the wand streams them, instead of as a whole recorded
+    letter. Shares POINTING_AXIS/FILTER_GAIN and the same rotation update
+    with the batch version so the live cursor and the final graded path
+    roughly agree - but it isn't used for scoring, only display, so it
+    takes a cheaper forward-difference gyro update (the latest sample only,
+    no next-sample lookahead) rather than the batch version's midpoint rule.
+
+    The wand streams continuously (idle included), so this runs as one
+    unbroken track rather than restarting per letter: restarting would make
+    the cursor jump. update() returns the absolute (azimuth, elevation) in
+    radians, azimuth unwrapped so it never jumps by 2*pi; the frontend picks
+    its own view origin. Heading drifts slowly (nothing corrects gyro bias
+    around the vertical axis), which the frontend absorbs by re-centering
+    while idle."""
+
+    # Caps one step's integration time so a stalled stream (e.g. the bridge
+    # restarting) can't turn one gyro reading into a big jump.
+    MAX_DT_S = 0.1
+
+    def __init__(self) -> None:
+        self._rotation: np.ndarray | None = None
+        self._last_t_ms: float | None = None
+        self._last_azimuth = 0.0
+
+    def update(self, sample: StrokeSample) -> tuple[float, float]:
+        accel = np.array([sample.ax, sample.ay, sample.az])
+        if self._rotation is None or sample.t < self._last_t_ms:
+            # First sample ever, or the wand rebooted (its millis() restarted).
+            self._rotation = _initial_attitude(accel)
+        else:
+            dt = min((sample.t - self._last_t_ms) / 1000.0, self.MAX_DT_S)
+            omega = np.radians(np.array([sample.gx, sample.gy, sample.gz]))
+            norm = np.linalg.norm(accel)
+            if norm > 0:
+                up = np.array([0.0, 0.0, 1.0])
+                expected_gravity = self._rotation.T @ up
+                omega = omega + FILTER_GAIN * np.cross(accel / norm, expected_gravity)
+            self._rotation = self._rotation @ _rotation_step(omega, dt)
+        self._last_t_ms = sample.t
+
+        pointing = self._rotation @ POINTING_AXIS
+        azimuth = math.atan2(pointing[0], pointing[1])
+        azimuth = self._last_azimuth + (azimuth - self._last_azimuth + math.pi) % (2 * math.pi) - math.pi
+        self._last_azimuth = azimuth
+        elevation = math.asin(max(-1.0, min(1.0, float(pointing[2]))))
+        return azimuth, elevation
+
+
 def center(path: list[tuple[float, float]]) -> list[tuple[float, float]]:
     if not path:
         return path

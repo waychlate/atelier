@@ -1,27 +1,12 @@
 #pragma once
 
 // Copy this file to config.h and fill in real values. config.h is
-// gitignored so your Wi-Fi credentials and server IP never get committed.
+// gitignored so per-wand settings never get committed.
 
-// ---------------------------------------------------------------------------
-// Wi-Fi / server
-// ---------------------------------------------------------------------------
-#define WIFI_SSID      "YOUR_HOTSPOT_SSID"
-#define WIFI_PASSWORD  "YOUR_HOTSPOT_PASSWORD"
-
-// Base URL of the server (no trailing slash). The wand POSTs to /stroke and
-// GETs /round/current under it.
-#define SERVER_BASE_URL "http://192.168.1.100:8000"
-
+// Everything - live cursor samples and the final letter submission - goes
+// over USB serial to scripts/serial_bridge.py, not Wi-Fi. See that script's
+// docstring. Give each wand its own PLAYER_ID.
 #define PLAYER_ID      "player_1"
-
-// Fallback letter if /round/current can't be reached at submit time.
-#define FALLBACK_LETTER  "A"
-
-// How long to wait for Wi-Fi on boot / reconnect before giving up (ms).
-#define WIFI_CONNECT_TIMEOUT_MS  15000
-// HTTP request timeout (ms).
-#define HTTP_TIMEOUT_MS          5000
 
 // ---------------------------------------------------------------------------
 // Hardware pins

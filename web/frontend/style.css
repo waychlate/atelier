@@ -53,6 +53,16 @@ canvas {
   opacity: 0;
 }
 
+/* Live wand cursor, layered above both the drawing and the hint image. */
+.cursor-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: transparent;
+  border-color: transparent;
+  pointer-events: none;
+}
+
 .per-stroke-scores {
   display: flex;
   gap: 10px;

@@ -15,10 +15,12 @@ import tts
 from db import TigerStore
 from game_state import GameState
 from models import (
+    CursorMessage,
     ESP32FeedbackResponse,
     LanguageInfo,
     LanguagesResponse,
     LetterStats,
+    LiveSample,
     ModeInfo,
     ModesResponse,
     RoundStartMessage,
@@ -35,6 +37,17 @@ MODES = {
 
 log = logging.getLogger("uvicorn.error")
 
+
+class _SkipLiveAccessLog(logging.Filter):
+    """/stroke/live is hit 50 times a second, all the time - logging each
+    one would bury every other request in the server terminal."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/stroke/live" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_SkipLiveAccessLog())
+
 app = FastAPI()
 
 game_state = GameState()
@@ -45,6 +58,11 @@ background_tasks: set[asyncio.Task] = set()
 
 MODEL_PATH = Path(__file__).parent / "model" / "emnist_cnn.pt"
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+
+# Tracks wand orientation between /stroke/live calls for the live cursor.
+# Display only - not used for scoring, which always replays the full letter
+# through trajectory.reconstruct_pointer_path once /stroke is called.
+live_tracker = trajectory.LiveOrientationTracker()
 
 # Opt-in: set RECORD_DIR to save every incoming packet as JSON, for tuning
 # trajectory reconstruction against real hardware data offline.
@@ -321,6 +339,22 @@ def _reindex(samples: list[StrokeSample], sample_rate_hz: int) -> list[StrokeSam
     return [s.model_copy(update={"t": i * dt_ms}) for i, s in enumerate(samples)]
 
 
+@app.post("/stroke/live")
+async def post_stroke_live(sample: LiveSample) -> dict:
+    """One sample of the wand's continuous stream (see
+    scripts/serial_bridge.py) - updates the live cursor tracker and
+    broadcasts its new position over /ws. Display only, never scored:
+    the graded result always comes from replaying the whole letter through
+    /stroke once submit is pressed. Silently does nothing without gyro data
+    - the pointer model needs it, and there's no accel-only fallback for a
+    live cursor (unlike the final reconstruction)."""
+    if sample.gx is None or sample.gy is None or sample.gz is None:
+        return {}
+    x, y = live_tracker.update(sample)
+    await broadcast(CursorMessage(x=x, y=y, pen=sample.pen, letter_start=sample.letter_start))
+    return {}
+
+
 async def _persist_and_broadcast(
     result: StrokeResultMessage, per_stroke_scores, mode: str, card
 ) -> None:
@@ -345,7 +379,11 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
     count) falls back to the whole-path CNN (scoring.py) on the
     concatenated pen-down samples."""
     record_packet(packet)
-    letter = packet.letter
+    # The firmware no longer knows the target letter (no network to fetch it
+    # over) - fall back to the round the server itself is running. A
+    # non-empty value is still honored (scripts/simulate_stroke.py uses this
+    # to test a specific letter regardless of the live round).
+    letter = packet.letter or game_state.target_letter
     stroke_runs = split_by_pen(packet)
 
     expected = strokes.expected_stroke_count(letter)

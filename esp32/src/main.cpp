@@ -1,11 +1,10 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
+#include <esp_system.h>
 
 #include <vector>
 
 #include "config.h"
 #include "imu_driver.h"
-#include "network_manager.h"
 
 namespace {
 
@@ -64,6 +63,24 @@ void start_letter() {
     Serial.println("[MAIN] Letter started");
 }
 
+// One compact line per sample, over the same USB serial link used for
+// debug logging - scripts/serial_bridge.py picks out lines starting with
+// "L:" and relays them to the server's live-cursor endpoint. Printed for
+// every sample, idle included, so the on-screen cursor always follows the
+// wand. `t` is millis() (not letter-relative) so the server's orientation
+// tracker sees one continuous clock across letters. Hand-built (no JSON
+// library) to stay well under the 20 ms sample budget - at 921600 baud
+// this line takes under 2 ms.
+void print_live_sample(const ImuSample &imu, uint32_t now, bool pen, bool letter_start) {
+    char buf[176];
+    snprintf(buf, sizeof(buf),
+             "L:{\"t\":%lu,\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
+             "\"gx\":%.4f,\"gy\":%.4f,\"gz\":%.4f,\"pen\":%d,\"letter_start\":%s}",
+             (unsigned long)now, imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz,
+             pen ? 1 : 0, letter_start ? "true" : "false");
+    Serial.println(buf);
+}
+
 void sample_if_due(bool pen) {
     uint32_t now = millis();
     if ((int32_t)(now - next_sample_ms) < 0) return;
@@ -72,6 +89,15 @@ void sample_if_due(bool pen) {
     next_sample_ms += SAMPLE_INTERVAL_MS;
     if ((int32_t)(now - next_sample_ms) >= 0) next_sample_ms = now + SAMPLE_INTERVAL_MS;
 
+    LetterSample s;
+    if (!imu_read(s.imu)) {
+        Serial.println("[MAIN] IMU read failed, sample skipped");
+        return;
+    }
+    s.pen = letter_active && pen;
+    print_live_sample(s.imu, now, s.pen, letter_active && letter_buffer.empty());
+
+    if (!letter_active) return;
     if (letter_buffer.size() >= MAX_LETTER_SAMPLES) {
         if (!buffer_full_logged) {
             Serial.println("[MAIN] Letter buffer full - press submit (GPIO 18)");
@@ -79,14 +105,7 @@ void sample_if_due(bool pen) {
         }
         return;
     }
-
-    LetterSample s;
-    if (!imu_read(s.imu)) {
-        Serial.println("[MAIN] IMU read failed, sample skipped");
-        return;
-    }
     s.imu.t = now - letter_start_ms;
-    s.pen = pen;
     letter_buffer.push_back(s);
 }
 
@@ -108,53 +127,51 @@ void submit_letter() {
         return;
     }
 
-    String letter = FALLBACK_LETTER;
-    if (!fetch_target_letter(letter)) {
-        Serial.printf("[MAIN] Couldn't fetch target letter, using fallback \"%s\"\n", letter.c_str());
-    }
+    Serial.printf("[MAIN] Submitting: %d strokes, %u samples (%u pen-down) over %lu ms\n",
+                  stroke_count, letter_buffer.size(), pen_samples, letter_buffer.back().imu.t);
 
-    Serial.printf("[MAIN] Submitting \"%s\": %d strokes, %u samples (%u pen-down) over %lu ms\n",
-                  letter.c_str(), stroke_count, letter_buffer.size(), pen_samples,
-                  letter_buffer.back().imu.t);
-
-    JsonDocument doc;
-    doc["player_id"] = PLAYER_ID;
-    doc["letter"] = letter;
-    doc["sample_rate_hz"] = 1000 / SAMPLE_INTERVAL_MS;
-    JsonArray samples = doc["samples"].to<JsonArray>();
-    for (const LetterSample &s : letter_buffer) {
-        JsonObject o = samples.add<JsonObject>();
-        o["t"] = s.imu.t;
-        o["ax"] = s.imu.ax;
-        o["ay"] = s.imu.ay;
-        o["az"] = s.imu.az;
-        o["gx"] = s.imu.gx;
-        o["gy"] = s.imu.gy;
-        o["gz"] = s.imu.gz;
-        o["pen"] = s.pen ? 1 : 0;
+    // One "S:" line (same prefix scheme as the live "L:" samples), printed
+    // sample by sample. Building the whole letter in memory first (it can
+    // be ~100 KB) ran the ESP32 out of heap and crashed it on submit.
+    // `letter` is empty: the server already knows its own active round and
+    // grades against that.
+    Serial.printf("S:{\"player_id\":\"%s\",\"letter\":\"\",\"sample_rate_hz\":%d,\"samples\":[",
+                  PLAYER_ID, 1000 / SAMPLE_INTERVAL_MS);
+    char buf[160];
+    for (size_t i = 0; i < letter_buffer.size(); i++) {
+        const LetterSample &s = letter_buffer[i];
+        snprintf(buf, sizeof(buf),
+                 "%s{\"t\":%lu,\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
+                 "\"gx\":%.4f,\"gy\":%.4f,\"gz\":%.4f,\"pen\":%d}",
+                 i ? "," : "", (unsigned long)s.imu.t, s.imu.ax, s.imu.ay, s.imu.az,
+                 s.imu.gx, s.imu.gy, s.imu.gz, s.pen ? 1 : 0);
+        Serial.print(buf);
     }
+    Serial.println("]}");
     reset_letter();
+}
 
-    if (doc.overflowed()) {
-        Serial.printf("[MAIN] Out of memory building JSON (free heap %u), letter dropped\n",
-                      ESP.getFreeHeap());
-        return;
+const char *reset_reason() {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON: return "power-on";
+        case ESP_RST_EXT: return "reset pin";
+        case ESP_RST_SW: return "software restart";
+        case ESP_RST_PANIC: return "CRASHED";
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT: return "FROZE (watchdog)";
+        case ESP_RST_BROWNOUT: return "POWER DIPPED (brownout) - check for a short or loose power wire";
+        default: return "other";
     }
-
-    String payload;
-    serializeJson(doc, payload);
-    doc.clear();  // free the document before the HTTP request allocates
-
-    send_stroke_to_server(payload);
 }
 
 }  // namespace
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(921600);
     delay(200);
     Serial.println();
-    Serial.println("[MAIN] Handwriting wand booting");
+    Serial.printf("[MAIN] Handwriting wand booting (last reset: %s)\n", reset_reason());
 
     pinMode(PIN_PEN, INPUT_PULLUP);
     pinMode(PIN_SUBMIT, INPUT_PULLUP);
@@ -164,9 +181,6 @@ void setup() {
         Serial.println("[MAIN] Retrying IMU init in 1 s");
         delay(1000);
     }
-
-    // Keep going even without Wi-Fi; send_stroke_to_server() retries later.
-    network_init();
 
     Serial.println("[MAIN] Ready - hold GPIO 4 LOW to draw, press GPIO 18 LOW to submit");
 }
@@ -185,7 +199,7 @@ void loop() {
         Serial.printf("[MAIN] Stroke %d ended\n", stroke_count);
     }
 
-    if (letter_active) sample_if_due(pen_now);
+    sample_if_due(pen_now);
 
     if (submit_now && !submit_was) submit_letter();
 }

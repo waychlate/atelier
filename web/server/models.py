@@ -15,15 +15,31 @@ class StrokeSample(BaseModel):
     pen: bool = True  # was the pen button held at this sample (mid-stroke vs. gap)
 
 
+class LiveSample(StrokeSample):
+    """One sample from the wand's continuous stream (idle included), over
+    scripts/serial_bridge.py -> POST /stroke/live, for the live cursor.
+    Unlike StrokeSample, `t` is the wand's millis() clock, not
+    letter-relative. `letter_start` marks the first sample of a new letter
+    so the frontend can clear the previous trail."""
+
+    letter_start: bool = False
+
+
 class StrokePacket(BaseModel):
     """One HTTP POST covers a whole letter, not a single stroke — the
     firmware buffers from first pen-down to the submit button press and
     sends everything in one shot, pen-up gaps between strokes included.
     Individual strokes are recovered server-side by splitting on `pen`
-    (see main.py's split_by_pen)."""
+    (see main.py's split_by_pen).
+
+    `letter` is usually empty: the firmware no longer fetches the target
+    letter (it has no network connection at all - see
+    scripts/serial_bridge.py), so main.py falls back to the server's own
+    game_state.target_letter. A non-empty value is still honored, which
+    scripts/simulate_stroke.py relies on to test a specific letter."""
 
     player_id: str = "player"
-    letter: str
+    letter: str = ""
     sample_rate_hz: int
     samples: list[StrokeSample]
 
@@ -49,6 +65,19 @@ class StrokeResultMessage(BaseModel):
     paths: list[list[tuple[float, float]]]  # one per submitted stroke, positioned for display
     per_stroke_scores: Optional[list[float]] = None  # only for strict multi-stroke letters
     next_letter: str
+
+
+class CursorMessage(BaseModel):
+    """Live wand-pointing position, broadcast over /ws for every streamed
+    sample - display only, never graded (see main.py's /stroke/live). x/y
+    are absolute azimuth/elevation in radians; the frontend chooses where
+    on screen (0, 0) sits."""
+
+    type: Literal["cursor"] = "cursor"
+    x: float
+    y: float
+    pen: bool
+    letter_start: bool
 
 
 class ESP32FeedbackResponse(BaseModel):
