@@ -6,137 +6,152 @@ fresh session doesn't have to re-derive it from conversation history.
 
 ## Scope decisions (superseding parts of CLAUDE.md)
 
-- **Single-player, not 2-player.** Hackathon only has one ESP32 + accelerometer available.
-  Game is: server shows a target letter, player draws it, gets scored, cumulative score
-  builds up across letters (progression system), no HP/versus mechanic.
-- **Networking**: WiFi stays as originally specced (no Bluetooth pivot). ESP32 can't join
-  eduroam (enterprise auth), so the plan is a phone hotspot at the venue — no code impact,
-  current HTTP POST contract is unchanged.
+- **Single-player, not 2-player.** Hackathon only has one ESP32 + IMU wand available.
+  Game is: server picks a target letter (via spaced repetition, see below), player draws
+  it, gets scored, cumulative score builds up across letters — no HP/versus mechanic.
+- **Networking**: WiFi, real hardware, tested end-to-end (see "Real firmware contract"
+  below). ESP32 can't join eduroam (enterprise auth); a phone hotspot works around venue
+  WiFi client isolation (devices on the same shared network often can't reach each other).
 - **Scoring**: switched from DTW-vs-templates to an **image classifier**. Reconstructed
-  path (`trajectory.py`) gets
-  rasterized to a 28x28 image and classified by a small CNN trained on EMNIST letters.
-  Score = softmax probability of the target letter × 100. DTW/fastdtw and the old
-  `templates/` directory are gone.
-- **Path reconstruction uses gyro + accel (laser-pointer model).** Real hardware
-  recordings showed players draw by *rotating* the wand — total acceleration stays within
-  ~1 m/s² of gravity — so the old accel double-integration was mostly measuring gravity
+  path (`trajectory.py`) gets rasterized to a 28x28 image and classified by a small CNN
+  trained on EMNIST letters. Score = softmax probability of the target letter × 100.
+  DTW/fastdtw and the old `templates/` directory are gone.
+- **Path reconstruction uses gyro + accel (laser-pointer model).** Real wand recordings
+  show players draw by *rotating* the wand — total acceleration stays within ~1 m/s² of
+  gravity during a stroke — so accel-only double-integration was mostly measuring gravity
   shifting between axes as the wand tilted: fine for straight strokes, badly distorted
-  S/M. `trajectory.reconstruct_pointer_path` now tracks orientation (gyro integration
-  corrected toward the accelerometer's gravity reading, Mahony-style) and draws where the
-  wand points. It runs over the whole letter, pen-up gaps included, so strokes keep their
-  real relative positions. Replaying 18 real recordings through `/stroke`: mean score
-  34.5 → 54.6 (e.g. S 0 → 91.7, M 43.7 → 99.5). Mounting matters: `POINTING_AXIS` in
-  `trajectory.py` was measured with calibration strokes (chip flat, wand along +y); a
-  differently mounted chip needs it changed. Accel-only `reconstruct_path` remains as the
-  fallback for packets without gyro.
-- **Raw recordings**: start the server with `RECORD_DIR=recordings` to save every
-  `/stroke` packet as JSON (gitignored) for offline tuning.
-- `scripts/simulate_stroke.py` synthesizes pointer-model data (gyro + gravity tilt)
-  matching real hardware; `--no-gyro` exercises the accel fallback.
+  curvy ones (S, M). `trajectory.reconstruct_pointer_path` tracks orientation (gyro
+  integration corrected toward the accelerometer's gravity reading, Mahony-style) and
+  draws where the wand points; it runs over the whole letter, pen-up gaps included, so
+  strokes keep their real relative positions. Replaying 18 real recordings through
+  `/stroke`: mean score 34.5 → 54.6 (e.g. S 0 → 91.7, M 43.7 → 99.5, a 4-stroke M drawn
+  with pen lifts between each stroke 0 → 99.0). Mounting matters: `POINTING_AXIS` in
+  `trajectory.py` was measured with horizontal/vertical calibration strokes on the current
+  wand (chip flat, wand along +y) — a differently-mounted chip (e.g. a second wand) needs
+  it re-measured. Accel-only `reconstruct_path` remains the fallback for packets without
+  gyro (`trajectory.has_gyro`) — exercise it with `scripts/simulate_stroke.py --no-gyro`.
 - **Implemented: stroke-by-stroke recognition** with strict stroke order/direction
   enforcement (e.g. T = vertical stem top-to-bottom, then horizontal bar left→right), plus
-  a **two-button design**: pen button (hold-to-draw/release-to-pause between strokes) and
-  submit button (finalize). **The teammate independently built this on a `firmware`
-  branch** (`origin/firmware`, esp32/ dir merged into this working tree) — see the next
-  section for the real contract, which differs from what was first assumed here.
+  a **two-button wand design**: pen button (hold-to-draw/release-to-pause between strokes)
+  and submit button (finalize) — see "Real firmware contract" below for the exact
+  wire format.
   - Canonical per-letter stroke definitions (order, direction, control points for
     rendering) live in `strokes.py` — single source of truth for both validation and the
-    reference-hint images, so they can never drift out of sync.
-  - Multi-stroke letters (T: 2, A: 3, H: 3, E: 4) get strict validation: each submitted
-    stroke is checked against its expected slot's direction (net displacement vector,
-    8-way compass, must be within 60° or it's a hard 0 for that slot) — this also enforces
-    *order*, since a stroke drawn out of sequence usually fails its slot's direction check.
-  - Single-stroke letters (M, S — naturally drawn as one continuous motion) skip this
-    entirely and fall back to the whole-path CNN, same as before.
+    reference-hint images, so they can never drift out of sync. Covers all 26 Latin
+    letters now (was a 6-letter demo set early on).
+  - Multi-stroke letters get strict validation: each submitted stroke is checked against
+    its expected slot's direction (net displacement vector, 8-way compass, or rotation
+    direction via signed area for circular strokes like O/G's bowl) — this also enforces
+    *order*, since a stroke drawn out of sequence usually fails its slot's check.
+  - Single-stroke letters (drawn as one continuous motion) skip this and fall back to the
+    whole-path CNN.
   - If a multi-stroke letter's submitted stroke count doesn't match its expected count,
     also falls back to the whole-path CNN on the concatenated strokes.
-  - Verified: correct order/direction scores ~97-100; deliberately wrong order (tested by
-    swapping T's two strokes) correctly scores 0.
-- **Stroke reference images — implemented, self-generated, not sourced externally.**
-  `generate_reference_images.py` renders each letter's canonical stroke definition
-  (numbered arrows) straight from `strokes.py` into `web/frontend/reference/<letter>.png`
-  — guarantees the hint always matches exactly what's validated. Frontend flashes it after
-  5s of no stroke activity (`app.js`'s `scheduleHint`, reset on every `stroke_received` WS
-  event, not just round start).
+- **Stroke reference images** — self-generated by `generate_reference_images.py` straight
+  from `strokes.py`'s canonical definitions into `web/frontend/reference/<letter>.png`, so
+  the hint always matches exactly what's validated.
+- **Languages, modes, spaced repetition, TTS — implemented by the teammate on top of the
+  above** (see the new section below).
 
-## Real firmware contract (discovered from `origin/firmware`, esp32/ now merged in)
+## Real firmware contract (esp32/, `main` branch — real hardware, tested)
 
-This superseded the two-button design's original assumption of one `POST /stroke` per
-stroke plus a separate `POST /submit`. **The actual firmware sends the whole letter in
-one HTTP POST**: the pen button (GPIO 4) and submit button (GPIO 18) are both handled
-device-side — the ESP32 buffers every sample from first pen-down until submit is pressed
-(pen-up gaps between strokes included, each sample tagged `pen: 0/1`), and only then does
-one `POST /stroke` with everything. There is no `/submit` endpoint. `GET /round/current`
-matches what was already built. Adjusted to match:
+One `POST /stroke` per **letter**, not per stroke: the pen button (GPIO 4) and submit
+button (GPIO 18) are both handled device-side — the ESP32 buffers every sample from first
+pen-down until submit is pressed (pen-up gaps between strokes included, each sample tagged
+`pen: 0/1`), then sends one packet with everything. There is no `/submit` endpoint.
+`GET /round/current` gives the target letter to submit against.
 
-- `models.StrokeSample` gained a `pen: bool` field. `t` is **milliseconds since the letter
-  started** (firmware: `uint32_t`), not seconds — `trajectory._dt_array` now converts
-  (`np.diff(t) / 1000.0`); this was a real bug (1000x integration error) caught before any
-  real hardware data hit it. Sample rate is 50 Hz (`SAMPLE_INTERVAL_MS=20` in
-  `esp32/include/config.example.h`), not the 100 Hz originally assumed — doesn't matter
-  much since reconstruction prefers real `t` diffs when available, but `t` really does need
-  to be trusted now that it's not synthetic.
+- `models.StrokeSample.t` is **milliseconds since the letter started** (firmware:
+  `uint32_t`). `sample_rate_hz` is 50 (`SAMPLE_INTERVAL_MS=20` in
+  `esp32/include/config.example.h`).
 - `main.py`'s `split_by_pen()` splits one incoming packet into per-stroke sample runs
-  (contiguous `pen=True` stretches); `pen=False` samples are dropped. `game_state.py` no
-  longer buffers anything cross-request — the whole letter arrives atomically, so scoring
-  and round-advance both happen inside the single `/stroke` handler now.
-- Lost capability: the frontend's live "stroke N of M drawn" progress + per-stroke
-  hint-timer-reset don't make sense anymore — the server has zero visibility until the
-  whole letter arrives in one shot. Removed that UI; the hint timer now only resets on
-  `round_start`.
-- `scripts/simulate_stroke.py` rewritten to build one whole-letter packet (strokes + short
-  pen=False gap segments in between, 50 Hz, millisecond `t`) and POST it once — matches
-  the real firmware shape. Re-verified end-to-end: all 7 demo letters score well; wrong
-  order/rotation still correctly reject; reconstruction scale confirmed sane (unit-square
-  range, not 1000x blown up) after the ms fix.
-- **Not yet done**: no physical ESP32/platformio available in this environment to actually
-  flash and test — everything above is verified via the updated simulator standing in for
-  real hardware. First real on-device test should double check the `pen` semantics
-  (esp32/src/main.cpp drops the trailing pen-up tail before sending, but a leading tail
-  before the first pen-down shouldn't exist since buffering starts exactly at first
-  pen-down) and confirm real accelerometer noise doesn't break `split_by_pen`'s run
-  detection (e.g. debounce chatter producing spurious 1-sample runs).
+  (contiguous `pen=True` stretches); `pen=False` samples are dropped for stroke
+  validation but kept for the gyro pointer reconstruction (see above — they're needed to
+  track where the wand moved between strokes).
+- **Real hardware confirmed working end-to-end**, including on-device testing: IMU init
+  (auto-detects MPU-6050/6500/9250/9255 via WHO_AM_I — `esp32/src/imu_driver.cpp` — the
+  current wand reports 0x70, an MPU-6500 sold as a "9250"), WiFi connect, two-button
+  capture, `/stroke` POST, and the browser UI updating live over the `/ws` broadcast.
+  A phone hotspot is the reliable way to get the wand and the laptop running the server on
+  the same network without WiFi client isolation blocking device-to-device traffic.
+- `esp32/include/config.h` is gitignored (real WiFi credentials + server IP); copy
+  `config.example.h` to `config.h` and fill in real values, per-wand.
+- **Debugging real recordings**: start the server with `RECORD_DIR=recordings` and every
+  `/stroke` packet gets saved as JSON (gitignored) — used to find and fix the ay-sign bug
+  and to build/verify the gyro pointer reconstruction above, against real motion instead
+  of only synthetic data.
+- `scripts/simulate_stroke.py` synthesizes IMU data for a wand that *aims* at a letter's
+  shape (gyro rates + gravity tilt) rather than translates through it — matches how real
+  hardware draws. `--single-shot` tests a multi-stroke letter drawn without lifting the
+  pen; `--no-gyro` tests the accel-only fallback.
+
+## Languages, modes, spaced repetition, TTS (teammate's work, merged into this session)
+
+- **`config.LANGUAGES`**: Latin (26 letters, fully playable) and Japanese hiragana (5
+  characters, `enabled=False` — plumbing only, no stroke/CNN recognition built for it yet;
+  `POST /language/japanese` is rejected until that's done). `GET /languages`,
+  `POST /language/{code}` to switch the active deck.
+- **Modes**: `learn` (shows the stroke reference hint) and `blind` (audio-only — plays the
+  letter's sound via ElevenLabs TTS instead of a visual hint, `tts.py`). Blind mode is
+  locked in the UI until `ELEVENLABS_API_KEY` is configured (`GET /modes` reports
+  `enabled`), same pattern as an unconfirmed language. `POST /mode/{code}`,
+  `GET /tts/{language}/{letter}` (cached per language+letter on disk).
+- **Spaced repetition (`srs.py`)**: Anki-style SM-2 variant, but the "clock" is review
+  count, not wall time (an interval of 3 means "due again after 3 more reviews") — day-
+  scale intervals would make spacing invisible in a demo. `game_state.py` picks the next
+  target letter from the SRS scheduler instead of a fixed cycle; Latin and Japanese have
+  independent decks/clocks.
+- **Persistence (`db.py`, Tiger Data / TimescaleDB)**: every attempt + SRS card state,
+  keyed by (player_id, language, letter). Fully optional — unset or unreachable
+  `DATABASE_URL` and the game runs in-memory only, same as before (`GameState` is always
+  the source of truth mid-session; the DB is persistence + analytics, written
+  best-effort off the request path via a background task so a slow/down DB never delays
+  the ESP32's response). `web/server/.env.example` has the env vars; copy to `.env` and
+  run with `uvicorn main:app --env-file .env`.
+- **`GET /stats`**: per-letter attempt history + a timeline, from Tiger Data if connected
+  else computed from the in-memory attempt log (same response shape either way).
+- **`POST /progress/reset`**: wipes SRS cards + attempt history for one language, leaves
+  others untouched.
 
 ## Current implementation state (web/server/, web/frontend/)
 
-- `models.py`, `game_state.py`, `main.py`, `trajectory.py` — as described above, working.
-  `trajectory.place_in_bbox` repositions each independently-reconstructed multi-stroke
-  submission into its canonical slot for display (true relative position isn't recoverable
-  from separate accel recordings anyway).
-- `strokes.py` — canonical per-letter stroke definitions + direction validation.
-- `generate_reference_images.py` — one-time script, renders `web/frontend/reference/*.png`.
-- `rasterize.py` — path → 28x28 image for the CNN.
+- `main.py` — FastAPI app; `/stroke` picks reconstruction (gyro pointer vs accel
+  fallback) and scoring method (strict per-stroke vs whole-path CNN), `game_state.submit`
+  grades the SRS card and returns the round result, then a background task persists to
+  Tiger Data and broadcasts over `/ws`.
+- `trajectory.py` — `reconstruct_pointer_path` (primary) and `reconstruct_path`
+  (accel-only fallback); `place_in_bbox` repositions each independently-reconstructed
+  multi-stroke submission into its canonical slot for display (true relative position
+  across *separate* button-press recordings isn't recoverable from accel alone — this
+  doesn't apply to the gyro pointer path, which tracks position continuously through
+  pen-up gaps).
+- `strokes.py` — canonical per-letter stroke definitions (all 26 Latin letters) +
+  direction/rotation validation.
+- `game_state.py`, `srs.py`, `db.py`, `tts.py`, `config.py`, `models.py` — as described
+  above.
+- `generate_reference_images.py` — renders `web/frontend/reference/*.png` from
+  `strokes.py`.
+- `rasterize.py` / `scoring.py` — path → 28x28 image → CNN classification.
 - `model/cnn.py`, `model/train_model.py`, `model/emnist_cnn.pt` — CNN trained on
   `tanganke/emnist_letters` (HF dataset), 92.6% test accuracy. **Note**: that dataset's
   images are transposed (inherited the classic EMNIST byte-format bug) —
   `train_model.py`'s `fix_orientation()` corrects this; if retraining against a different
   EMNIST source, re-verify orientation before trusting accuracy numbers.
-- `scoring.py` — rasterize + classify, no DTW.
-- `scripts/simulate_stroke.py` — dev tool, synthesizes a fake accelerometer stroke from
-  hand-authored per-letter control points and POSTs it to a running server, for
-  smoke-testing without real hardware. Verified end-to-end (HTTP + WebSocket broadcast).
-- Demo letter set: `config.DEMO_LETTERS` = M, A, T, H, S, E.
-- None of the DTW→CNN pivot changes are committed yet (still working tree changes as of
-  this checkpoint) — check `git status` before assuming what's on `main`.
+- `esp32/` — firmware, real hardware tested (see above).
+- `scripts/simulate_stroke.py` — dev tool, POSTs a synthesized letter to a running server
+  without needing real hardware.
 
 ## Open questions / not yet decided
 
-- Stroke-order choices for A/H/E (T's order was given directly by the user: vertical stem
-  top-to-bottom, then horizontal bar) are my best-guess standard block-letter order — worth
-  a quick sanity check against how the user actually wants to teach them, since they're
-  easy to tweak in `strokes.py` (just data) but do need real-hand testing.
-- First real on-device test is still pending (no hardware in this environment) — see the
-  "Not yet done" note above.
-- S's whole-path CNN score is the weakest of the demo set (~61-67 for a clean synthetic
-  draw) — worth testing with a real ESP32 draw specifically.
-- **G added** (circle bowl + straight descender, counterclockwise) as the first
-  circular-stroke example — `strokes.py`'s `classify_circular_stroke` validates rotation
-  direction via signed area (shoelace formula) instead of net displacement, since a closed
-  loop's start/end points are near-identical. Verified: correct rotation ~100, wrong
-  rotation (clockwise instead of CCW) correctly scores 0 for that stroke.
-  `scripts/simulate_stroke.py --single-shot` tests "drew it in one go" for any
-  multi-stroke letter, but my hand-authored synthetic loop+tail shapes for G don't closely
-  match real cursive-G topology (the CNN doesn't recognize my synthetic version well) —
-  this is a synthetic-test-data limitation, not a system bug, since the same whole-path
-  CNN fallback already scores well for M and S. Worth testing G's one-go fallback with a
-  real ESP32 draw rather than more synthetic tuning.
+- Stroke-order choices in `strokes.py` are a best-guess standard block-letter order for
+  most letters — worth a sanity check against how this is meant to be taught, since
+  they're easy to tweak (just data) but do need real-hand testing per letter.
+- Japanese hiragana is plumbing-only (`config.Language.enabled=False`) — no stroke
+  definitions or recognition built for it.
+- Second wand: mounting-dependent constants (`POINTING_AXIS` in `trajectory.py`) are a
+  single global right now, measured on one wand. A second wand with a differently-mounted
+  chip needs its own calibration; if two wands are ever live at once this becomes
+  per-player, not global.
+- Tiger Data / ElevenLabs are both optional (env vars unset → in-memory / locked mode) and
+  haven't been exercised against real credentials in this environment — worth a real test
+  pass once keys are available.
