@@ -90,11 +90,11 @@ void start_letter() {
 // library) to stay well under the 20 ms sample budget - at 921600 baud
 // this line takes under 2 ms.
 void print_live_sample(const ImuSample &imu, uint32_t now, bool pen, bool letter_start) {
-    char buf[176];
+    char buf[256];
     snprintf(buf, sizeof(buf),
-             "L:{\"t\":%lu,\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
+             "L:{\"player_id\":\"%s\",\"t\":%lu,\"ax\":%.4f,\"ay\":%.4f,\"az\":%.4f,"
              "\"gx\":%.4f,\"gy\":%.4f,\"gz\":%.4f,\"pen\":%d,\"letter_start\":%s}",
-             (unsigned long)now, imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz,
+             PLAYER_ID, (unsigned long)now, imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz,
              pen ? 1 : 0, letter_start ? "true" : "false");
     Serial.println(buf);
 }
