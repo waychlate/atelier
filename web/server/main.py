@@ -223,6 +223,7 @@ def get_languages() -> LanguagesResponse:
             LanguageInfo(
                 code=code, label=lang.label, enabled=lang.enabled,
                 letter_count=len(lang.letters), letters=lang.letters,
+                definitions=getattr(lang, "definitions", {}),
             )
             for code, lang in config.LANGUAGES.items()
         ],
@@ -542,19 +543,20 @@ async def post_stroke(packet: StrokePacket) -> ESP32FeedbackResponse:
         display_paths = gyro_paths if gyro_paths is not None else []
     elif gyro_paths is not None:
         accuracy = scoring.score_stroke(
-            [point for path in gyro_paths for point in path],
+            gyro_paths,
             letter,
             active_model,
             letter_to_index=letter_to_index,
         )
         display_paths = gyro_paths
     else:
-        merged = _reindex([s for run in stroke_runs for s in run], packet.sample_rate_hz)
-        path = trajectory.reconstruct_path(merged, packet.sample_rate_hz)
+        raw_paths = [
+            trajectory.reconstruct_path(run, packet.sample_rate_hz) for run in stroke_runs
+        ]
         accuracy = scoring.score_stroke(
-            path, letter, active_model, letter_to_index=letter_to_index
+            raw_paths, letter, active_model, letter_to_index=letter_to_index
         )
-        display_paths = [path]
+        display_paths = raw_paths
 
     result, card = game_state.submit(letter, accuracy, display_paths, per_stroke_scores)
 

@@ -120,6 +120,7 @@ class LanguageInfo(BaseModel):
     enabled: bool
     letter_count: int
     letters: list[str]
+    definitions: dict[str, str] = {}
 
 
 class LanguagesResponse(BaseModel):

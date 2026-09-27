@@ -65,7 +65,7 @@
       </div>
 
       <div id="menu-panel-practice" class="menu-panel hidden">
-        <details open id="practice-groups-group" class="setting-group collapsible-group hidden">
+        <details open id="practice-groups-group" class="setting-group collapsible-group hidden" hidden>
           <summary class="setting-label">Groupings</summary>
           <div id="practice-groups" class="option-row"></div>
         </details>
@@ -148,8 +148,9 @@
       <div class="layout">
         <div class="game">
           <div class="banner">
-            <span class="label">Draw the letter:</span>
+            <span class="label">Draw:</span>
             <span id="target-letter" class="target-letter">-</span>
+            <span id="target-definition" class="target-definition hidden"></span>
             <button
               id="replay-audio-btn"
               class="icon-btn play-audio-btn hidden"

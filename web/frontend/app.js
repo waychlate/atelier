@@ -1,4 +1,5 @@
 const targetLetterEl = document.getElementById("target-letter");
+const targetDefinitionEl = document.getElementById("target-definition");
 const accuracyEl = document.getElementById("accuracy");
 const cumulativeScoreEl = document.getElementById("cumulative-score");
 const nextRoundBtn = document.getElementById("next-round-btn");
@@ -69,11 +70,39 @@ let practiceLetters = null; // null = full deck; else a Set of selected letters
 let practiceSelectionMode = "srs"; // "srs" or "accuracy"
 let activeMenuTab = "practice";
 
+const KANJI_DEFINITIONS = {
+  "日": "Sun / Day",
+  "月": "Moon / Month",
+  "火": "Fire",
+  "水": "Water",
+  "木": "Tree / Wood",
+  "山": "Mountain",
+  "川": "River",
+  "人": "Person",
+  "口": "Mouth",
+  "土": "Earth / Soil",
+};
+
+function getLetterDefinition(letter) {
+  if (activeLanguage === "kanji") {
+    return KANJI_DEFINITIONS[letter] || "";
+  }
+  return "";
+}
+
 // Blind mode is audio-recall: showing the letter next to the speaker icon
 // would give away the answer before the player even tries. Learn mode has
 // no such secrecy (the stroke hint already shows the shape).
 function showTargetLetter(letter) {
   targetLetterEl.textContent = activeMode === "blind" ? "?" : letter;
+  const def = getLetterDefinition(letter);
+  if (def && targetDefinitionEl) {
+    targetDefinitionEl.textContent = `· ${def}`;
+    targetDefinitionEl.classList.remove("hidden");
+  } else if (targetDefinitionEl) {
+    targetDefinitionEl.textContent = "";
+    targetDefinitionEl.classList.add("hidden");
+  }
 }
 
 // ---------- screen navigation ----------
@@ -373,8 +402,9 @@ function hiraganaGroups() {
 function renderPracticeGroups() {
   const isHiragana = activeLanguage === "japanese";
   practiceGroupsGroupEl.classList.toggle("hidden", !isHiragana);
-  if (!isHiragana) return;
+  practiceGroupsGroupEl.hidden = !isHiragana;
   practiceGroupsEl.replaceChildren();
+  if (!isHiragana) return;
   const letters = currentLanguageLetters();
   for (const g of hiraganaGroups()) {
     const btn = document.createElement("button");
@@ -406,11 +436,25 @@ function renderPracticeLetters() {
   renderPracticeGroups();
   practiceLettersEl.replaceChildren();
   const letters = currentLanguageLetters();
+  const isKanji = activeLanguage === "kanji";
   for (const letter of letters) {
     const btn = document.createElement("button");
     const selected = practiceLetters === null || practiceLetters.has(letter);
-    btn.className = "letter-toggle" + (selected ? " selected" : "");
-    btn.textContent = letter;
+    btn.className =
+      "letter-toggle" +
+      (selected ? " selected" : "") +
+      (isKanji ? " kanji-toggle" : "");
+    if (isKanji && KANJI_DEFINITIONS[letter]) {
+      const charSpan = document.createElement("span");
+      charSpan.className = "kanji-char";
+      charSpan.textContent = letter;
+      const defSpan = document.createElement("span");
+      defSpan.className = "kanji-def";
+      defSpan.textContent = KANJI_DEFINITIONS[letter];
+      btn.append(charSpan, defSpan);
+    } else {
+      btn.textContent = letter;
+    }
     btn.addEventListener("click", () => {
       // Lazily materialize the "everything selected" set on first
       // deselection, instead of tracking exclusions.
@@ -491,9 +535,12 @@ wandSensitivitySlider.value = cursorPxPerRad;
 // Fraction of the way the displayed cursor moves toward each new reading
 // (50 Hz), smoothing out hand tremor and sensor noise at a small lag.
 const CURSOR_SMOOTHING = 0.6;
-// Disabled: view no longer auto-drifts back to the wand while idle.
-// Once you point somewhere, it stays there until you start the next letter.
-const RECENTER_RATE = 0;
+// While no letter is in progress, the view slowly re-centers on the wand
+// (this fraction of the remaining distance per 50 Hz sample, ~1 s to
+// settle), so wherever you point becomes the middle and slow gyro heading
+// drift never walks the cursor off screen. Frozen during a letter so
+// strokes keep their positions relative to each other.
+const RECENTER_RATE = 0.04;
 
 const cursor = { x: 0, y: 0, pen: false, seen: false }; // smoothed position
 const view = { x: 0, y: 0 };
@@ -659,8 +706,22 @@ function onCursor(msg) {
     liveStrokes[liveStrokes.length - 1].push([cursor.x, cursor.y]);
   }
   if (!letterActive) {
-    view.x += (cursor.x - view.x) * RECENTER_RATE;
-    view.y += (cursor.y - view.y) * RECENTER_RATE;
+    // Forgiving auto-center: within a wide central comfort zone (140px),
+    // there is ZERO drag/pull — the wand moves completely freely and naturally.
+    // Only if the cursor wanders towards the outer perimeter does it gently ease
+    // the view to absorb gyro heading drift and keep the cursor on-screen.
+    const DEADZONE_PX = 140;
+    const dx_px = (cursor.x - view.x) * cursorPxPerRad;
+    const dy_px = (cursor.y - view.y) * cursorPxPerRad;
+
+    if (Math.abs(dx_px) > DEADZONE_PX) {
+      const excessX = dx_px - Math.sign(dx_px) * DEADZONE_PX;
+      view.x += (excessX / cursorPxPerRad) * 0.04;
+    }
+    if (Math.abs(dy_px) > DEADZONE_PX) {
+      const excessY = dy_px - Math.sign(dy_px) * DEADZONE_PX;
+      view.y += (excessY / cursorPxPerRad) * 0.04;
+    }
   }
   cursor.pen = msg.pen;
   drawCursor();
@@ -721,7 +782,11 @@ function renderLetters(letters) {
 
     const letterTd = document.createElement("td");
     letterTd.className = "letter";
-    letterTd.textContent = l.letter;
+    const def =
+      statsTabLanguage === "kanji" && KANJI_DEFINITIONS[l.letter]
+        ? ` (${KANJI_DEFINITIONS[l.letter]})`
+        : "";
+    letterTd.textContent = `${l.letter}${def}`;
 
     const statusTd = document.createElement("td");
     const pill = document.createElement("span");
@@ -870,7 +935,8 @@ function connect() {
       activeMode = msg.mode;
       accuracyEl.textContent = msg.accuracy.toFixed(1);
       cumulativeScoreEl.textContent = msg.cumulative_score;
-      gradeEl.textContent = `${GRADE_LABELS[msg.grade]} · ${msg.letter} back in ${msg.next_review_in}`;
+      const def = getLetterDefinition(msg.letter);
+      gradeEl.textContent = `${GRADE_LABELS[msg.grade]} · ${msg.letter}${def ? ` (${def})` : ""} back in ${msg.next_review_in}`;
       gradeEl.className = `grade ${msg.grade}`;
       updatePerStrokeScores(msg.per_stroke_scores);
       drawPaths(msg.paths);

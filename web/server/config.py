@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
@@ -26,6 +26,7 @@ class Language:
     # playable yet: no stroke/CNN recognition built for this script. See
     # checkpoint.md's "Japanese: plumbing now, recognition later" note.
     enabled: bool = True
+    definitions: dict[str, str] = field(default_factory=dict)
 
 
 HIRAGANA_LETTERS = [
@@ -46,6 +47,19 @@ KANJI_LETTERS = [
     "山", "川", "人", "口", "土",
 ]
 
+KANJI_DEFINITIONS: dict[str, str] = {
+    "日": "Sun / Day",
+    "月": "Moon / Month",
+    "火": "Fire",
+    "水": "Water",
+    "木": "Tree / Wood",
+    "山": "Mountain",
+    "川": "River",
+    "人": "Person",
+    "口": "Mouth",
+    "土": "Earth / Soil",
+}
+
 LANGUAGES: dict[str, Language] = {
     "latin": Language(label="Latin Alphabet", letters=list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")),
     "japanese": Language(
@@ -57,6 +71,7 @@ LANGUAGES: dict[str, Language] = {
         label="Japanese (Kanji)",
         letters=KANJI_LETTERS,
         enabled=True,
+        definitions=KANJI_DEFINITIONS,
     ),
 }
 DEFAULT_LANGUAGE = "latin"

@@ -1,6 +1,56 @@
 @font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_R.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_RB.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_RI.ttf") format("truetype");
+  font-weight: normal;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_RBI.ttf") format("truetype");
+  font-weight: bold;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_RZ.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Linux Libertine";
+  src: url("fonts/linux_libertine/LinLibertine_RZI.ttf") format("truetype");
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Makcasa";
-  src: url("makcasa/Makcasa-Regular.otf") format("opentype"),
+  src: url("fonts/makcasa/Makcasa-Regular.otf") format("opentype"),
+       url("fonts/makcasa/Makcasa-Regular.ttf") format("truetype"),
+       url("makcasa/Makcasa-Regular.otf") format("opentype"),
        url("makcasa/Makcasa-Regular.ttf") format("truetype");
   font-weight: normal;
   font-style: normal;
@@ -12,6 +62,7 @@
   src: url("lostar/Lostar.ttf") format("truetype");
   font-display: swap;
 }
+
 
 :root {
   --bg: #111;
@@ -58,6 +109,7 @@ body {
   padding: 16px;
   box-sizing: border-box;
 }
+
 
 button {
   padding: 10px 24px;
@@ -158,8 +210,8 @@ button:disabled {
   margin: 8px 0 0;
 }
 
-.auth-error.hidden {
-  display: none;
+.hidden:not(.hint-image) {
+  display: none !important;
 }
 
 /* ---------- menu screen ---------- */
@@ -185,6 +237,12 @@ button:disabled {
   justify-content: center;
   border-bottom: 1px solid var(--panel-border);
   margin: 20px 0;
+}
+
+.menu-tabs .tab {
+  font-family: "Linux Libertine", Georgia, serif;
+  font-size: 1.15rem;
+  letter-spacing: 0.5px;
 }
 
 .menu-panel {
@@ -292,6 +350,27 @@ button:disabled {
   color: var(--accent-fg);
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(79, 195, 247, 0.3);
+}
+
+.letter-toggle.kanji-toggle {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  min-width: 58px;
+}
+
+.kanji-char {
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.kanji-def {
+  font-size: 0.65rem;
+  opacity: 0.85;
+  margin-top: 2px;
+  white-space: nowrap;
 }
 
 .group-toggle {
@@ -431,6 +510,14 @@ button:disabled {
   font-weight: bold;
   margin-left: 8px;
   color: var(--accent);
+}
+
+.target-definition {
+  font-size: 1.25rem;
+  color: var(--muted);
+  margin-left: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .play-audio-btn {
@@ -611,10 +698,11 @@ button:disabled {
 }
 
 .tab {
+  font-family: "Linux Libertine", Georgia, serif;
   background: transparent;
   color: var(--muted);
   padding: 8px 16px;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   border-radius: 6px 6px 0 0;
   border: none;
   cursor: pointer;

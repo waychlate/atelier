@@ -32,6 +32,7 @@ KANJI_LETTER_TO_INDEX = make_letter_to_index(KANJI_LETTERS)
 # scores substantially while leaving 0 and 100 fixed, rather than scoring
 # hiragana linearly against a tougher baseline.
 HIRAGANA_SCORE_BOOST_GAMMA = 0.6
+KANJI_SCORE_BOOST_GAMMA = 0.7
 
 
 def load_model(weights_path: Path, num_classes: int = len(LETTERS)) -> torch.nn.Module:
@@ -42,7 +43,7 @@ def load_model(weights_path: Path, num_classes: int = len(LETTERS)) -> torch.nn.
 
 
 def score_stroke(
-    path: list[tuple[float, float]],
+    path: list[tuple[float, float]] | list[list[tuple[float, float]]],
     target_letter: str,
     model: torch.nn.Module,
     letter_to_index: dict[str, int] = LETTER_TO_INDEX,
@@ -63,6 +64,8 @@ def score_stroke(
     raw = float(probs[index].item())
     if letter_to_index is HIRAGANA_LETTER_TO_INDEX:
         raw = raw**HIRAGANA_SCORE_BOOST_GAMMA
+    elif letter_to_index is KANJI_LETTER_TO_INDEX:
+        raw = raw**KANJI_SCORE_BOOST_GAMMA
     return raw * 100.0
 
 

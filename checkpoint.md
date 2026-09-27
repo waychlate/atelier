@@ -33,7 +33,9 @@ fresh session doesn't have to re-derive it from conversation history.
     rotating chevrons (`▾`/`▸`) and slide animations, allowing users to collapse sections.
   - **Additive multi-group selection (Hiragana)**: Gojuon row buttons (`a`, `ka`, `sa`, etc.)
     toggle additively with `.selected` and `.partial` states. Added a "Clear all" button
-    next to "Select all" for focused drill setups.
+    next to "Select all" for focused drill setups. Groupings section is strictly hidden
+    (both via `.hidden:not(.hint-image) { display: none !important; }` and HTML `hidden` attribute)
+    and cleared when non-Japanese decks (Latin, Kanji) are active.
 - **Titular branding & logo font**:
   - Implemented **Makcasa** (`web/frontend/makcasa/Makcasa-Regular.otf/.ttf`) as the
     primary titular font for `.game-title` ("Atelier!").
@@ -68,12 +70,21 @@ The game supports three playable languages/decks in `config.LANGUAGES`:
      compensate for 49-class softmax dispersion.
    - Hints: animated stroke-order GIFs from Wikimedia Commons (`reference/<char>.gif`).
 3. **Japanese Kanji (`kanji`)**:
-   - 10 foundational, pictographic characters: `日` (sun), `月` (moon), `火` (fire),
-     `水` (water), `木` (tree), `山` (mountain), `川` (river), `人` (person),
-     `口` (mouth), `土` (earth).
+   - 10 foundational, pictographic characters: `日` (Sun / Day), `月` (Moon / Month), `火` (Fire),
+     `水` (Water), `木` (Tree / Wood), `山` (Mountain), `川` (River), `人` (Person),
+     `口` (Mouth), `土` (Earth / Soil).
+   - Definitions are surfaced across the entire UI: play banner prompt (in Learn mode as
+     `火 · Fire` and in Blind mode as `? · Fire`), practice selection character buttons with
+     dedicated subtitle tags (`.kanji-toggle`), grading feedback banners (`火 (Fire)`), and
+     the stats screen character review table.
    - Scored via a dedicated 10-class CNN (`model/kanji_cnn.pt`, 812 KB, **99.90% test
-     accuracy**) trained via `model/train_kanji_model.py` using 30,000 augmented samples
-     derived from 14 system CJK font weights + inverted Wikimedia reference glyphs.
+     accuracy**) trained via `model/train_kanji_model.py`.
+   - **Multi-stroke rasterization**: `rasterize.path_to_image` accepts multiple distinct
+     stroke paths and renders them without drawing artificial connector lines across pen-up
+     gaps. This fixed an issue where multi-stroke characters (especially `火`) had artificial
+     connector lines that turned the glyph into `木` (scoring 0.05% instead of 99.99%). Added
+     `KANJI_SCORE_BOOST_GAMMA = 0.7` in `scoring.py` to gracefully accommodate natural hand-drawn
+     variations.
    - Hints: animated stroke-order GIFs from Wikimedia Commons (`reference/<char>.gif`).
    - `activeLanguage === "latin" ? "png" : "gif"` dynamically routes hint formats.
 
@@ -89,6 +100,15 @@ The game supports three playable languages/decks in `config.LANGUAGES`:
 - Live wand-cursor: streamed at 50 Hz (`POST /stroke/live`), tracked by
   `LiveOrientationTracker`, and broadcast over `/ws` as `cursor` messages to render a live
   pointer dot and trail on the canvas.
+- **Forgiving Deadzone Auto-Centering**:
+  - Replaced the aggressive center-pull spring with a wide central deadzone (`DEADZONE_PX = 140px`,
+    creating a 280x280 px free area). Inside this zone, center pull is 0 so the wand moves
+    completely naturally with zero rubber-banding.
+  - Soft-boundary easing only engages if gyro heading drift nudges the cursor toward the canvas
+    perimeter, gently keeping it on-screen.
+  - Removed all snapping on `letter_start` and `endLetter`: the cursor never teleports to
+    the center when beginning a stroke, drawing smoothly from the exact point of aim. View
+    remains locked during drawing.
 
 ## Hardware & Firmware Contract (Wired USB Serial)
 
