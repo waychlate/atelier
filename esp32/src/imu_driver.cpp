@@ -14,6 +14,20 @@ constexpr uint8_t REG_ACCEL_XOUT_H  = 0x3B;
 constexpr uint8_t REG_PWR_MGMT_1    = 0x6B;
 constexpr uint8_t REG_WHO_AM_I      = 0x75;
 
+// Per-chip axis signs, applied to accel and gyro alike, so that on every
+// wand the chip's +Y points out the tip (what the server's pointer model
+// assumes). The breakout boards mount their chips differently. Flip exactly
+// two axes at a time: flipping one or three mirrors the data rather than
+// rotating it. Override in config.h if a wand is built differently.
+#ifndef IMU_6050_AXIS_SIGNS
+#define IMU_6050_AXIS_SIGNS {-1, -1, 1}
+#endif
+#ifndef IMU_6500_AXIS_SIGNS
+#define IMU_6500_AXIS_SIGNS {1, 1, 1}
+#endif
+
+float axis_sign[3] = {1, 1, 1};
+
 constexpr float GRAVITY       = 9.80665f;
 constexpr float ACCEL_LSB_PER_G   = 8192.0f;  // ±4 g
 constexpr float GYRO_LSB_PER_DPS  = 32.8f;    // ±1000 dps
@@ -77,6 +91,13 @@ bool imu_init() {
                                      : "unknown, continuing";
     Serial.printf("[IMU] WHO_AM_I = 0x%02X (%s)\n", who, chip);
 
+    const float signs_6050[3] = IMU_6050_AXIS_SIGNS;
+    const float signs_6500[3] = IMU_6500_AXIS_SIGNS;
+    const float *signs = who == 0x68 ? signs_6050 : signs_6500;
+    for (int i = 0; i < 3; i++) axis_sign[i] = signs[i];
+    Serial.printf("[IMU] Axis signs: x%+.0f y%+.0f z%+.0f\n",
+                  axis_sign[0], axis_sign[1], axis_sign[2]);
+
     bool ok = true;
     ok &= write_reg(REG_CONFIG, 0x03);         // DLPF ~41 Hz (gyro; accel too on MPU-6050)
     ok &= write_reg(REG_GYRO_CONFIG, 0x10);    // FS_SEL=2  -> ±1000 dps
@@ -97,11 +118,11 @@ bool imu_read(ImuSample &out) {
     if (!read_regs(REG_ACCEL_XOUT_H, buf, sizeof(buf))) return false;
 
     // Layout: AX AY AZ TEMP GX GY GZ, each big-endian int16.
-    out.ax = be16(&buf[0])  / ACCEL_LSB_PER_G * GRAVITY;
-    out.ay = be16(&buf[2])  / ACCEL_LSB_PER_G * GRAVITY;
-    out.az = be16(&buf[4])  / ACCEL_LSB_PER_G * GRAVITY;
-    out.gx = be16(&buf[8])  / GYRO_LSB_PER_DPS;
-    out.gy = be16(&buf[10]) / GYRO_LSB_PER_DPS;
-    out.gz = be16(&buf[12]) / GYRO_LSB_PER_DPS;
+    out.ax = axis_sign[0] * be16(&buf[0])  / ACCEL_LSB_PER_G * GRAVITY;
+    out.ay = axis_sign[1] * be16(&buf[2])  / ACCEL_LSB_PER_G * GRAVITY;
+    out.az = axis_sign[2] * be16(&buf[4])  / ACCEL_LSB_PER_G * GRAVITY;
+    out.gx = axis_sign[0] * be16(&buf[8])  / GYRO_LSB_PER_DPS;
+    out.gy = axis_sign[1] * be16(&buf[10]) / GYRO_LSB_PER_DPS;
+    out.gz = axis_sign[2] * be16(&buf[12]) / GYRO_LSB_PER_DPS;
     return true;
 }

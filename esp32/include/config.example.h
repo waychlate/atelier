@@ -17,6 +17,12 @@
 #define PIN_I2C_SCL         22
 
 #define MPU9250_I2C_ADDR    0x68
+
+// Optional per-chip axis correction (see imu_driver.cpp). The firmware picks
+// one by WHO_AM_I. Uncomment to override if a drawing comes out upside down
+// or mirrored on one wand. Always flip exactly two axes.
+// #define IMU_6050_AXIS_SIGNS {-1, -1, 1}
+// #define IMU_6500_AXIS_SIGNS {1, 1, 1}
 #define I2C_CLOCK_HZ        400000
 
 // ---------------------------------------------------------------------------
