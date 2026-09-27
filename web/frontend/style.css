@@ -827,6 +827,39 @@ button:disabled {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
+.tutorial-panel {
+  width: 280px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px rgba(217, 179, 77, 0.08), 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.tutorial-panel.hidden {
+  display: none;
+}
+
+.tutorial-panel h3 {
+  margin: 0 0 12px;
+  color: var(--accent);
+}
+
+.tutorial-panel p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.tutorial-panel #tutorial-dismiss-btn {
+  display: block;
+  width: 100%;
+  font-size: 1rem;
+  padding: 10px 16px;
+}
+
 .hint-image.hidden {
   opacity: 0;
 }

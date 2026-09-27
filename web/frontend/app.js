@@ -42,6 +42,10 @@ const practiceSelectAllBtn = document.getElementById("practice-select-all");
 const practiceClearAllBtn = document.getElementById("practice-clear-all");
 const practiceStartBtn = document.getElementById("practice-start-btn");
 const switchPlayerBtn = document.getElementById("switch-player-btn");
+const tutorialPanelEl = document.getElementById("tutorial-panel");
+const tutorialTitleEl = document.getElementById("tutorial-title");
+const tutorialBodyEl = document.getElementById("tutorial-body");
+const tutorialDismissBtn = document.getElementById("tutorial-dismiss-btn");
 
 const GRADE_LABELS = {
   again: "Again",
@@ -119,6 +123,7 @@ function showScreen(name) {
   // Play stays visually quiet — the alphabet marquee background is hidden
   // while drawing (see .magic-background's body.play-active rule).
   document.body.classList.toggle("play-active", name === "play");
+  if (name !== "play" && promptAudio) promptAudio.pause();
   if (name === "stats") refreshStats();
   if (name === "menu") showMenuTab(activeMenuTab);
 }
@@ -537,7 +542,12 @@ function submitPracticeConfig() {
   });
 }
 
-practiceStartBtn.addEventListener("click", () => showScreen("play"));
+// The round's letter is already picked before the player gets here, so
+// entering the play screen is what kicks off its prompt (sound, hint).
+practiceStartBtn.addEventListener("click", () => {
+  showScreen("play");
+  startPrompt();
+});
 
 renderPracticeSelectionOptions();
 
@@ -611,19 +621,81 @@ function playPrompt() {
   });
 }
 
-// Learn mode: delayed stroke-hint image (existing behavior). Blind mode:
-// no hint image at all — the audio prompt itself is the only cue, played
-// immediately and replayable via the speaker button.
+// One-time onboarding, shown the first time a player hits each mode (Learn
+// vs Blind have different controls, so they're tracked separately). Gated
+// on localStorage rather than anything server-side - purely a per-browser
+// "don't nag a returning player" convenience, not game state.
+const TUTORIAL_SEEN_KEY_PREFIX = "atelier_tutorial_seen_";
+
+const TUTORIAL_COPY = {
+  learn: {
+    title: "How to draw",
+    body: "Hold the wand's pen button while you move it to trace the letter shown, and let go between strokes. If you pause, a stroke diagram will pop up to help, and you can tap the speaker icon to hear the letter again. Press the wand's submit button when you're done to grade it.",
+  },
+  blind: {
+    title: "How to draw (Blind mode)",
+    body: "You'll hear the letter's sound instead of seeing it - hold the pen button while tracing it from memory, and let go between strokes. Tap the speaker icon to replay the sound. Press submit when you're done.",
+  },
+};
+
+function maybeShowTutorial() {
+  const key = TUTORIAL_SEEN_KEY_PREFIX + activeMode;
+  let seen = false;
+  try {
+    seen = localStorage.getItem(key) === "1";
+  } catch {
+    // Private browsing / blocked storage - fall through and show it rather
+    // than silently skip the tutorial forever.
+  }
+  if (seen) {
+    tutorialPanelEl.classList.add("hidden");
+    return;
+  }
+  const copy = TUTORIAL_COPY[activeMode] || TUTORIAL_COPY.learn;
+  tutorialTitleEl.textContent = copy.title;
+  tutorialBodyEl.textContent = copy.body;
+  tutorialPanelEl.classList.remove("hidden");
+  if (activeMode === "learn" && currentLetter) {
+    // Show the stroke diagram immediately instead of waiting for the usual
+    // pause-triggered delay (scheduleHint), so the tutorial's first letter
+    // is illustrated right away rather than appearing to do nothing.
+    if (hintTimer) clearTimeout(hintTimer);
+    const ext = activeLanguage === "latin" ? "png" : "gif";
+    hintImage.src = `reference/${encodeURIComponent(currentLetter)}.${ext}`;
+    hintImage.classList.remove("hidden");
+  }
+}
+
+tutorialDismissBtn.addEventListener("click", () => {
+  tutorialPanelEl.classList.add("hidden");
+  try {
+    localStorage.setItem(TUTORIAL_SEEN_KEY_PREFIX + activeMode, "1");
+  } catch {
+    // Storage blocked - dismissal still works for this session, it just
+    // won't stay dismissed on a future visit.
+  }
+});
+
+// Both modes play the letter's sound when TTS is configured (Blind mode's
+// `enabled` flag doubles as "TTS is available"). Learn mode additionally
+// shows the letter and a delayed stroke-hint image; Blind mode has audio only.
+function ttsAvailable() {
+  return modes.some((m) => m.code === "blind" && m.enabled);
+}
+
 function startPrompt() {
   if (hintTimer) clearTimeout(hintTimer);
   hideHint();
-  if (activeMode === "blind") {
-    replayAudioBtn.classList.remove("hidden");
-    playPrompt();
-  } else {
-    replayAudioBtn.classList.add("hidden");
-    scheduleHint();
-  }
+  const audio = activeMode === "blind" || ttsAvailable();
+  replayAudioBtn.classList.toggle("hidden", !audio);
+  // Rounds also start while the player is on the menu (login, leaving
+  // mid-result), so only speak when the play screen is actually showing.
+  const onPlayScreen = document
+    .getElementById("screen-play")
+    .classList.contains("active");
+  if (audio && onPlayScreen) playPrompt();
+  if (activeMode !== "blind") scheduleHint();
+  maybeShowTutorial();
 }
 
 replayAudioBtn.addEventListener("click", () => {

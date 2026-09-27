@@ -268,12 +268,18 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
 
 ## External Services & Graceful Degradation
 
-- **ElevenLabs TTS**: Reads target prompt in Blind mode. Audio clips are cached locally in
-  `web/server/tts_cache/`. Requires `ELEVENLABS_API_KEY` and voice IDs:
-  - English/Latin: `ELEVENLABS_VOICE_ID` (`vTdzvS51qswyWt3mQvK3`).
-  - Japanese (Hiragana & Kanji): `ELEVENLABS_JA_VOICE_ID` (`v36jhKEfrKXRPHYQKYyU`).
+- **ElevenLabs TTS**: Reads the target prompt in both modes (Learn: alongside the shown
+  letter + stroke hint; Blind: the only cue). Speaker button replays it. Audio clips are
+  cached locally in `web/server/tts_cache/`. Requires `ELEVENLABS_API_KEY` (the `sk_...`
+  secret, not the key ID shown in the dashboard list; paid plan needed for library voices)
+  and voice IDs:
+  - English/Latin: `ELEVENLABS_VOICE_ID` (`qWRrMoaOJUg6mVvRBiwM`).
+  - Japanese (Hiragana & Kanji): `ELEVENLABS_JA_VOICE_ID` (`OrIijq7uyVaGDbu9tqly`).
+  - The old defaults (`vTdzvS51...`, `v36jhKEf...`) returned `voice_not_found` on our account.
   - Routed dynamically via [`config.voice_id_for_language(language)`](file:///home/doa/projects/atelier/web/server/config.py#L29-L33).
-  - All 46 Hiragana and 10 Kanji audio clips are 100% pre-generated and cached to disk.
+  - Clips generate on first request and are cached to disk after that (the cache is
+    gitignored, so each laptop builds its own). Warm it before a demo so venue Wi-Fi can't
+    break audio.
   - `config.py` loads `.env` via `python-dotenv`.
   - Unset API key &rarr; Blind mode stays locked in UI.
 - **Tiger Data (TimescaleDB)**: Optional persistence for `attempts` and SRS cards across
