@@ -90,8 +90,8 @@ history if the reasoning behind a choice is unclear later.
     Every login/signup reloads them (`main.py`'s `_load_player_cards`) so progress does
     not leak between players. Tiger Data persistence (`db.create_player`/`list_players`)
     is best-effort.
-- **Menu navigation**: Four horizontal tabs: Versus (placeholder — static namecards/HP
-  bars), Practice, Shop (placeholder), and Settings.
+- **Menu navigation**: Four horizontal tabs: Versus (live — see "Multiplayer Versus
+  Mode" below), Practice, Shop (placeholder), and Settings.
 - **Practice tab**:
   - Full deck character grid (`GameState.practice_letters`, `None` = full deck).
   - Selection mode toggle: `"srs"` (SM-2 scheduler) vs. `"accuracy"` (`srs.pick_by_accuracy`,
@@ -222,7 +222,7 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
   restarts. Unset or unreachable `DATABASE_URL` &rarr; server runs purely in-memory via
   `GameState`.
 
-## Multiplayer Versus Mode (Backend Integrated)
+## Multiplayer Versus Mode (Backend + Frontend Integrated)
 
 - **Engine (`web/server/versus.py`)**:
   - Two wands race to draw the same random letter in the active language.
@@ -242,11 +242,28 @@ The wand operates purely over a **wired USB-UART serial connection at 921600 bau
   - `esp32/src/main.cpp` tags each live sample with `player_id`.
   - `main.py` maintains per-player `live_trackers: dict[str, LiveOrientationTracker]`, broadcasting
     `CursorMessage(player_id=...)` so the frontend can display independent live cursors for each wand.
+- **Frontend (`web/frontend/index.html` / `app.js` / `style.css`)**:
+  - `#menu-panel-versus` (Versus tab) shows a compact HP/namecard preview and a "Start match"
+    button (`POST /versus/start`), then navigates to `#screen-versus`.
+  - `#screen-versus` is the live match view: shared target letter, an intermission banner between
+    rounds, and two side-by-side player panels (namecard, HP bar, a small canvas for that wand's
+    live cursor/trail, and a status line).
+  - Each player panel gets its own cursor renderer (`makeVersusRenderer`, mirrors the solo
+    cursor/trail logic but as a reusable instance — two independent copies, one per wand).
+    `player_id`s are assigned to slots 0/1 in join order (`versusSlotOf`) and stay fixed for the match.
+  - `renderVersusState` updates HP bars (color shifts green→orange→red as HP drops) and the
+    winner banner from `versus_state` messages; `renderVersusAttempt` flashes each panel's canvas
+    border and sets status text (e.g. "Won the round!", "Missed — try again in a moment") from
+    `versus_attempt` messages.
+  - `versusActive` gates the WS `"cursor"` handler so live samples route to the right renderer
+    (versus panels vs. the solo play canvas) — the two never cross-talk.
+  - **Known gap**: no session-resume. If the browser reloads mid-match, the WS reconnects and the
+    next `versus_state` broadcast catches the UI up, but there's no immediate poll of current state
+    on load — clicking "Start match" again would restart the match rather than rejoin it. Low
+    priority for a table demo where the tab stays open; flagged rather than guessed at.
 
 ## Open Questions & Future Milestones
 
-- **Versus Frontend UI**: Wire the mock elements in `#menu-panel-versus` (or a dedicated versus view)
-  to `/versus/start`, `/versus/stop`, and the `versus_state` / `versus_attempt` WebSocket messages.
 - **Second Wand Mounting**: Pointing axis coordinates (`POINTING_AXIS` in `trajectory.py`)
   are currently calibrated for wand #1; a second device requires wand-specific axis config.
 - **Kanji Expansion**: Can expand beyond the initial 10 foundational characters to full

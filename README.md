@@ -18,6 +18,7 @@ Instead of typing on a keyboard or tapping multiple-choice options, learners phy
   - [3. Trajectory Reconstruction (Laser-Pointer Model)](#3-trajectory-reconstruction-laser-pointer-model)
   - [4. Scoring & Recognition Pipeline](#4-scoring--recognition-pipeline)
   - [5. Spaced Repetition & Learning Modes](#5-spaced-repetition--learning-modes)
+  - [6. Versus Mode](#6-versus-mode)
 - [Hardware Wiring & Setup](#hardware-wiring--setup)
 - [How to Run](#how-to-run)
   - [Prerequisites](#prerequisites)
@@ -26,6 +27,7 @@ Instead of typing on a keyboard or tapping multiple-choice options, learners phy
   - [3. Start the Serial Bridge](#3-start-the-serial-bridge)
   - [4. Open the Web Application](#4-open-the-web-application)
   - [5. Testing Without Hardware (Simulation)](#5-testing-without-hardware-simulation)
+  - [6. Multiplayer Setup (Two Laptops, Two Wands)](#6-multiplayer-setup-two-laptops-two-wands)
 - [Project Structure](#project-structure)
 - [API & WebSocket Protocol](#api--websocket-protocol)
 
@@ -155,6 +157,15 @@ If a letter is single-stroke, has mismatched stroke counts, or is Japanese kana/
   - **Learn Mode:** Shows the character prompt and an animated stroke-order reference hint.
   - **Blind Mode:** Masks the character prompt to `?` and speaks the pronunciation aloud via **ElevenLabs TTS** ([`web/server/tts.py`](file:///home/doa/projects/atelier/web/server/tts.py)). Audio clips are cached locally in `tts_cache/`.
 - **Persistence:** High-resolution time-series attempts and SRS cards are persisted asynchronously to **TimescaleDB / Tiger Data** via [`web/server/db.py`](file:///home/doa/projects/atelier/web/server/db.py), with automatic fallback to in-memory storage if no database is configured.
+
+### 6. Versus Mode
+
+Two wands race to draw the same letter ([`web/server/versus.py`](file:///home/doa/projects/atelier/web/server/versus.py)), separate from the solo SRS loop — it picks letters at random and doesn't touch either player's cards or stats.
+
+- **Joining:** A wand joins a match the moment its live stream reaches the server, keyed by the firmware's `PLAYER_ID` (see [Multiplayer Setup](#6-multiplayer-setup-two-laptops-two-wands) below) — no separate "join" action needed.
+- **Rounds:** Both players see the same target letter. The first submission scoring **≥ 80% accuracy** wins the round; the loser takes **20 HP** damage. A submission under 80% locks just that player out for **1 second** (no HP lost) so they can retry without blocking their opponent.
+- **Winning:** Both players start at **101 HP**. First to 0 HP loses the match. A **2.2 second** intermission separates rounds — long enough for the frontend's result flash to finish and the LED feedback on each wand (`LED_FLASH_MS`) to complete before the next letter opens.
+- **Frontend:** [`web/frontend/app.js`](file:///home/doa/projects/atelier/web/frontend/app.js) renders two independent live cursors (one per `player_id`) and HP bars that shift from green to red as damage accumulates, driven by `versus_state` / `versus_attempt` WebSocket messages (see [API & WebSocket Protocol](#api--websocket-protocol)).
 
 ---
 
@@ -299,6 +310,56 @@ python scripts/simulate_stroke.py S --no-gyro
 
 ---
 
+### 6. Multiplayer Setup (Two Laptops, Two Wands)
+
+Each wand's link to its own laptop is still a plain USB cable — Versus mode adds one more hop: an HTTP/WebSocket connection *between* the two laptops, so both bridges can reach the same server.
+
+```
+Laptop A (hosts the server)              Laptop B
+  ESP32 #1 --USB-->  serial_bridge.py --HTTP--> [same LAN] <--HTTP-- serial_bridge.py <--USB-- ESP32 #2
+                            │
+                            ▼
+                      main.py (FastAPI + WebSocket)
+                      binds 0.0.0.0:8000
+```
+
+1. **Flash each wand with a distinct `PLAYER_ID`.** `esp32/include/config.h` is gitignored so this never conflicts between the two flashing laptops:
+   ```cpp
+   // wand #1
+   #define PLAYER_ID "player_1"
+   ```
+   ```cpp
+   // wand #2
+   #define PLAYER_ID "player_2"
+   ```
+   `PLAYER_ID` is baked in at compile time — once a wand is flashed, `config.h` on the flashing laptop no longer matters for that wand.
+
+2. **Get both laptops on the same LAN.** Same Wi-Fi router, or one laptop hosts a hotspot the other joins — no internet required, just a shared local network.
+
+3. **Pick a host laptop (Laptop A) and find its LAN IP:**
+   ```bash
+   # Linux/macOS
+   hostname -I
+   ```
+
+4. **On Laptop A** — plug in wand #1, start the server and its own bridge:
+   ```bash
+   cd web/server && uvicorn main:app --host 0.0.0.0 --port 8000 &
+   cd ../.. && python scripts/serial_bridge.py   # default --base-url is localhost, correct here
+   ```
+
+5. **On Laptop B** — plug in wand #2, point its bridge at Laptop A's IP:
+   ```bash
+   python scripts/serial_bridge.py --base-url http://<laptop-A-ip>:8000
+   ```
+
+6. **Open the game UI** at `http://<laptop-A-ip>:8000` from either laptop (or a spectator device on the same LAN). Log in, open the **Versus** tab, and hit **Start match** — each wand fills a slot as soon as its first live sample arrives.
+
+> **Firewall:** if Laptop B's bridge can't connect, check that Laptop A allows inbound connections on port 8000 from the LAN — that's the most common blocker.
+> **`SERVER_HOST`:** defaults to `0.0.0.0` (binds all interfaces), which is what multiplayer needs. Watch out for a stray `$HOST` environment variable shadowing it — use `SERVER_HOST`, never `HOST`, when overriding.
+
+---
+
 ## Project Structure
 
 ```
@@ -333,6 +394,7 @@ atelier/
         ├── rasterize.py           # Path-to-28x28 grayscale image rendering
         ├── srs.py                 # SM-2 Spaced Repetition engine
         ├── game_state.py          # Session management & review queues
+        ├── versus.py              # Versus mode: HP, rounds, win/loss rules
         ├── db.py                  # TimescaleDB / Tiger Data persistence
         ├── tts.py                 # ElevenLabs speech generation & disk cache
         ├── requirements.txt       # Python dependencies
@@ -367,10 +429,15 @@ atelier/
 | `POST` | `/practice/config`| Restricts deck letters and chooses selection mode (`srs` vs `accuracy`) |
 | `GET` | `/stats` | Returns accuracy timeline and per-character review statistics |
 | `GET` | `/tts/{lang}/{char}` | Fetches or generates MP3 audio pronunciation |
+| `POST` | `/versus/start` | Starts a new Versus match, resetting both players to 101 HP |
+| `POST` | `/versus/stop` | Ends the active Versus match and returns to solo play |
+| `GET` | `/versus` | Returns the current match state (players, HP, letter, winner) |
 
 ### WebSocket Protocol (`/ws`)
 
 Clients connect to `/ws` for bi-directional live events:
-- **`round_start`**: Broadcast when a new character round begins.
-- **`cursor`**: Real-time $(x, y)$ pointer coordinates with pen state for on-screen cursor tracking.
-- **`stroke_result`**: Broadcast upon grading with accuracy percentage, reconstructed 2D paths, and updated cumulative score.
+- **`round_start`**: Broadcast when a new character round begins (solo mode).
+- **`cursor`**: Real-time $(x, y)$ pointer coordinates with pen state for on-screen cursor tracking, tagged with `player_id` so Versus mode can render two independent cursors.
+- **`stroke_result`**: Broadcast upon grading with accuracy percentage, reconstructed 2D paths, and updated cumulative score (solo mode).
+- **`versus_state`**: Broadcast on match start, player join, round win, and match end — carries both players' HP, the current target letter, and the winner (if the match is over).
+- **`versus_attempt`**: Broadcast per submission during a Versus match — carries the submitting player's status (`won`, `failed`, `locked`, `stale`), accuracy, and reconstructed paths.

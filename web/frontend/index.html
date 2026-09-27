@@ -56,10 +56,14 @@
         Draw letters from memory. Spaced repetition tracks what to practice.
       </p>
 
-      <div id="menu-panel-versus" class="menu-panel locked-panel hidden">
-        <p class="placeholder-note">1v1 Versus — coming soon.</p>
+      <div id="menu-panel-versus" class="menu-panel hidden">
+        <p class="placeholder-note">
+          Two wands, one shared letter. First to draw it accurately (80+)
+          wins the round and the other player loses HP. First to 0 HP
+          loses the match.
+        </p>
         <div class="versus-mock">
-          <div class="namecard">You</div>
+          <div class="namecard">Wand A</div>
           <div class="hp-bar">
             <div class="hp-fill" style="width: 100%"></div>
           </div>
@@ -67,8 +71,11 @@
           <div class="hp-bar">
             <div class="hp-fill" style="width: 100%"></div>
           </div>
-          <div class="namecard">Opponent</div>
+          <div class="namecard">Wand B</div>
         </div>
+        <button type="button" id="versus-start-btn" class="primary-btn">
+          Start match
+        </button>
       </div>
 
       <div id="menu-panel-practice" class="menu-panel hidden">
@@ -213,6 +220,77 @@
           <button id="next-round-btn">Skip letter</button>
         </div>
       </div>
+      </div>
+    </section>
+
+    <section id="screen-versus" class="screen">
+      <button type="button" class="back-btn" id="versus-leave-btn">
+        &larr; Menu
+      </button>
+
+      <div class="versus-arena">
+        <div class="banner">
+          <span class="label">Draw:</span>
+          <span id="versus-letter" class="target-letter">-</span>
+        </div>
+        <p id="versus-intermission" class="versus-intermission hidden">
+          Next letter coming up&hellip;
+        </p>
+
+        <div class="versus-players">
+          <div class="versus-player" id="versus-player-0">
+            <div class="namecard" id="versus-name-0">
+              Waiting for a wand&hellip;
+            </div>
+            <div class="hp-bar">
+              <div
+                class="hp-fill"
+                id="versus-hp-fill-0"
+                style="width: 100%"
+              ></div>
+            </div>
+            <div class="versus-canvas-wrap">
+              <canvas
+                id="versus-canvas-0"
+                class="versus-canvas"
+                width="300"
+                height="300"
+              ></canvas>
+            </div>
+            <p class="versus-status" id="versus-status-0"></p>
+          </div>
+
+          <span class="vs-label">VS</span>
+
+          <div class="versus-player" id="versus-player-1">
+            <div class="namecard" id="versus-name-1">
+              Waiting for a wand&hellip;
+            </div>
+            <div class="hp-bar">
+              <div
+                class="hp-fill"
+                id="versus-hp-fill-1"
+                style="width: 100%"
+              ></div>
+            </div>
+            <div class="versus-canvas-wrap">
+              <canvas
+                id="versus-canvas-1"
+                class="versus-canvas"
+                width="300"
+                height="300"
+              ></canvas>
+            </div>
+            <p class="versus-status" id="versus-status-1"></p>
+          </div>
+        </div>
+
+        <div id="versus-winner-banner" class="versus-winner-banner hidden">
+          <span id="versus-winner-text"></span>
+          <button type="button" id="versus-rematch-btn" class="primary-btn">
+            Rematch
+          </button>
+        </div>
       </div>
     </section>
 

@@ -57,6 +57,28 @@
   font-display: swap;
 }
 
+/* unicode-range excludes 0-9 (U+0030-0039): the trial build's digit glyphs
+   are dot placeholders, not numerals. Excluding that range makes the browser
+   fall through to the next font in the stack (system-ui) for digits only -
+   everything else (letters, punctuation) still renders in Cocogoose. */
+@font-face {
+  font-family: "Cocogoose Classic";
+  src: url("fonts/cocogoose_classic/Cocogoose-Classic-Medium-trial.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-002F, U+003A-10FFFF;
+}
+
+@font-face {
+  font-family: "Cocogoose Classic";
+  src: url("fonts/cocogoose_classic/Cocogoose-Classic-ExtraBold-trial.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-002F, U+003A-10FFFF;
+}
+
 :root {
   --bg: #14091f;
   --bg-glow: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(120, 70, 180, 0.35), transparent 60%);
@@ -94,7 +116,7 @@
 }
 
 body {
-  font-family: system-ui, sans-serif;
+  font-family: "Cocogoose Classic", system-ui, sans-serif;
   background: var(--bg) var(--bg-glow);
   color: var(--fg);
   min-height: 100vh;
@@ -344,26 +366,28 @@ button:disabled {
 
 .placeholder-note {
   color: var(--muted);
+  text-align: center;
 }
 
 .versus-mock {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
   margin-top: 16px;
   opacity: 0.6;
 }
 
 .versus-mock .namecard {
   background: var(--chip-bg);
-  padding: 10px 16px;
+  padding: 8px 12px;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  min-width: 60px;
 }
 
 .versus-mock .hp-bar {
-  width: 80px;
+  width: 70px;
   height: 10px;
   background: var(--chip-bg);
   border-radius: 5px;
@@ -376,8 +400,133 @@ button:disabled {
 }
 
 .versus-mock .vs-label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--muted-dim);
+  font-weight: bold;
+}
+
+#versus-start-btn,
+#practice-start-btn {
+  display: block;
+  max-width: 240px;
+  margin: 14px auto 0;
+}
+
+/* ---------- versus screen (live match) ---------- */
+/* Base sizes here; the small preview on the menu tab overrides them via the
+   more specific .versus-mock .hp-bar / .namecard rules above. */
+
+.namecard {
+  background: var(--chip-bg);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.hp-bar {
+  width: 100%;
+  height: 16px;
+  background: var(--chip-bg);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.hp-fill {
+  height: 100%;
+  background: #81c784;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s ease;
+}
+
+.hp-fill.hp-mid {
+  background: #ffb74d;
+}
+
+.hp-fill.hp-low {
+  background: #ef5350;
+}
+
+.vs-label {
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--muted-dim);
+}
+
+.versus-arena {
+  text-align: center;
+}
+
+.versus-intermission {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.versus-intermission.hidden {
+  display: none;
+}
+
+.versus-players {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.versus-player {
+  width: 300px;
+}
+
+.versus-canvas-wrap {
+  position: relative;
+  border-radius: 8px;
+  transition: box-shadow 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.versus-canvas {
+  background: var(--canvas-bg);
+  border: 2px solid var(--canvas-border);
+  border-radius: 8px;
+  max-width: 100%;
+}
+
+.versus-canvas-wrap.result-pass {
+  box-shadow: 0 0 24px rgba(217, 179, 77, 0.45), 0 0 0 3px rgba(217, 179, 77, 0.8);
+  transform: scale(1.008);
+}
+
+.versus-canvas-wrap.result-fail {
+  box-shadow: 0 0 24px rgba(239, 83, 80, 0.45), 0 0 0 3px rgba(239, 83, 80, 0.8);
+  animation: result-shake 0.35s ease;
+}
+
+.versus-status {
+  min-height: 1.3em;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.versus-status.status-won {
+  color: var(--accent);
+}
+
+.versus-status.status-failed {
+  color: #ef5350;
+}
+
+.versus-winner-banner {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  font-size: 1.3rem;
+}
+
+.versus-winner-banner.hidden {
+  display: none;
 }
 
 .letters-grid {
