@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="particle-field" id="particle-field"></div>
+    <div class="magic-background" id="magic-background"></div>
 
     <header class="app-header">
       <h1 class="game-title">Atelier⭑.ᐟ</h1>
@@ -52,8 +52,8 @@
 
     <section id="screen-menu" class="screen">
       <div class="screen-content">
-      <p class="subtitle">
-        Draw letters from memory. Spaced repetition tracks what to practice.
+      <p class="subtitle" id="menu-subtitle">
+        Hone your skills in isolation
       </p>
 
       <div id="menu-panel-versus" class="menu-panel locked-panel hidden">
@@ -72,6 +72,11 @@
       </div>
 
       <div id="menu-panel-practice" class="menu-panel hidden">
+        <details open class="setting-group collapsible-group">
+          <summary class="setting-label">Language</summary>
+          <div id="practice-language-options" class="option-row"></div>
+        </details>
+
         <details open id="practice-groups-group" class="setting-group collapsible-group hidden" hidden>
           <summary class="setting-label">Groupings</summary>
           <div id="practice-groups" class="option-row"></div>
@@ -100,9 +105,11 @@
           <div id="mode-options" class="option-row"></div>
         </details>
 
-        <button type="button" id="practice-start-btn" class="primary-btn">
-          Start practicing
-        </button>
+        <div class="practice-start-row">
+          <button type="button" id="practice-start-btn" class="primary-btn">
+            Start practicing
+          </button>
+        </div>
       </div>
 
       <div id="menu-panel-shop" class="menu-panel locked-panel hidden">

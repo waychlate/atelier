@@ -19,6 +19,7 @@ const timelineEmpty = document.getElementById("timeline-empty");
 const resetProgressBtn = document.getElementById("reset-progress-btn");
 const languageTabsEl = document.getElementById("language-tabs");
 const languageOptionsEl = document.getElementById("language-options");
+const practiceLanguageOptionsEl = document.getElementById("practice-language-options");
 const modeOptionsEl = document.getElementById("mode-options");
 const weakestCalloutEl = document.getElementById("weakest-callout");
 const weakestListEl = document.getElementById("weakest-list");
@@ -115,7 +116,11 @@ function showScreen(name) {
   // they need explicit show/hide tied to which screen is active instead of
   // just being inside/outside a hidden section.
   menuTabsEl.classList.toggle("hidden", name !== "menu");
+  // Play stays visually quiet — the alphabet marquee background is hidden
+  // while drawing (see .magic-background's body.play-active rule).
+  document.body.classList.toggle("play-active", name === "play");
   if (name === "stats") refreshStats();
+  if (name === "menu") showMenuTab(activeMenuTab);
 }
 
 document.querySelectorAll(".back-btn").forEach((btn) => {
@@ -188,6 +193,13 @@ const MENU_TABS = [
   { code: "settings", label: "Settings" },
 ];
 
+const MENU_SUBTITLES = {
+  versus: "Test your skills against equal opponents",
+  practice: "Hone your skills in isolation",
+  shop: "Reap your rewards",
+  settings: "",
+};
+
 function renderMenuTabs() {
   menuTabsEl.replaceChildren();
   for (const t of MENU_TABS) {
@@ -208,6 +220,12 @@ function renderMenuTabs() {
 function showMenuTab(code) {
   activeMenuTab = code;
   renderMenuTabs();
+  const subtitleEl = document.getElementById("menu-subtitle");
+  if (subtitleEl) {
+    const text = MENU_SUBTITLES[code] || "";
+    subtitleEl.textContent = text;
+    subtitleEl.classList.toggle("hidden", !text);
+  }
   for (const t of MENU_TABS) {
     if (t.code === "stats") continue;
     document
@@ -288,32 +306,39 @@ async function loadLanguages() {
     renderLanguageTabs();
   } catch (e) {
     languageOptionsEl.textContent = "unavailable";
+    if (practiceLanguageOptionsEl) practiceLanguageOptionsEl.textContent = "unavailable";
   }
 }
 
+// Rendered in two places (Settings tab + Practice tab) so language can be
+// switched from either — both stay in sync since they're rebuilt from the
+// same `languages`/`activeLanguage` state on every call.
 function renderLanguageOptions() {
-  languageOptionsEl.replaceChildren();
-  for (const lang of languages) {
-    const btn = document.createElement("button");
-    btn.className =
-      "lang-option" + (lang.code === activeLanguage ? " selected" : "");
-    btn.textContent = lang.label;
-    if (!lang.enabled) {
-      btn.classList.add("locked");
-      btn.disabled = true;
-      btn.title = "Coming soon";
-    } else {
-      btn.addEventListener("click", async () => {
-        if (lang.code === activeLanguage) return;
-        await fetch(`/language/${lang.code}`, { method: "POST" });
-        activeLanguage = lang.code;
-        renderLanguageOptions();
-        practiceLetters = null; // a different deck's selection wouldn't carry over meaningfully
-        renderPracticeLetters();
-        submitPracticeConfig();
-      });
+  for (const container of [languageOptionsEl, practiceLanguageOptionsEl]) {
+    if (!container) continue;
+    container.replaceChildren();
+    for (const lang of languages) {
+      const btn = document.createElement("button");
+      btn.className =
+        "lang-option" + (lang.code === activeLanguage ? " selected" : "");
+      btn.textContent = lang.label;
+      if (!lang.enabled) {
+        btn.classList.add("locked");
+        btn.disabled = true;
+        btn.title = "Coming soon";
+      } else {
+        btn.addEventListener("click", async () => {
+          if (lang.code === activeLanguage) return;
+          await fetch(`/language/${lang.code}`, { method: "POST" });
+          activeLanguage = lang.code;
+          renderLanguageOptions();
+          practiceLetters = null; // a different deck's selection wouldn't carry over meaningfully
+          renderPracticeLetters();
+          submitPracticeConfig();
+        });
+      }
+      container.appendChild(btn);
     }
-    languageOptionsEl.appendChild(btn);
   }
 }
 
@@ -1025,20 +1050,57 @@ resetProgressBtn.addEventListener("click", async () => {
   refreshStats();
 });
 
-// ---------- background sparkle field ----------
-// All animation is CSS (@keyframes spark-drift) — this just scatters
-// randomized starting positions/timing once at load, so no per-frame JS.
-(function initParticleField() {
-  const field = document.getElementById("particle-field");
+// ---------- magical floating background ----------
+// All motion is CSS (@keyframes cloud-drift, glyph-float) — this just
+// scatters clouds and glyphs with randomized position/size/timing once at
+// load, so there's no per-frame JS. Hidden on the Play screen via
+// showScreen()'s body.play-active toggle (see style.css).
+const MARQUEE_SCRIPTS = [
+  { label: "Latin", chars: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" },
+  { label: "Chinese", chars: "永和九年歲在癸丑暮春之初會稽山陰蘭亭" },
+  { label: "Korean", chars: "가나다라마바사아자차카타파하" },
+  { label: "Japanese", chars: "あいうえおかきくけこさしすせそたちつてと" },
+  { label: "Arabic", chars: "ابتثجحخدذرزسشصضطظعغفقكلمنهوي" },
+  { label: "Khmer", chars: "កខគឃងចឆជឈញដឋឌឍណតថទធន" },
+  { label: "Thai", chars: "กขคงจฉชซฌญฎฏฐฑฒณดตถทธนบ" },
+  { label: "Cyrillic", chars: "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ" },
+  { label: "Devanagari", chars: "अआइईउऊऋएऐओऔकखगघङचछजझञ" },
+  { label: "Greek", chars: "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ" },
+];
+
+(function initMagicBackground() {
+  const field = document.getElementById("magic-background");
   if (!field) return;
-  const COUNT = 28;
-  for (let i = 0; i < COUNT; i++) {
-    const spark = document.createElement("span");
-    spark.className = "spark";
-    spark.style.left = `${Math.random() * 100}%`;
-    spark.style.animationDuration = `${8 + Math.random() * 10}s`;
-    spark.style.animationDelay = `${Math.random() * 12}s`;
-    field.appendChild(spark);
+
+  // Soft drifting cloud shapes, behind the glyphs.
+  const CLOUD_COUNT = 6;
+  for (let i = 0; i < CLOUD_COUNT; i++) {
+    const cloud = document.createElement("div");
+    cloud.className = "cloud";
+    const size = 220 + Math.random() * 280;
+    cloud.style.width = `${size}px`;
+    cloud.style.height = `${size * 0.45}px`;
+    cloud.style.top = `${Math.random() * 90}%`;
+    cloud.style.animationDuration = `${70 + Math.random() * 50}s`;
+    cloud.style.animationDelay = `${-Math.random() * 90}s`; // negative: already mid-drift on load
+    field.appendChild(cloud);
+  }
+
+  // Individually floating/drifting characters, pooled from every script
+  // rather than one-script-per-row — a denser, more scattered "magic dust"
+  // look than the old sliding rows.
+  const allChars = MARQUEE_SCRIPTS.flatMap((s) => [...s.chars]);
+  const GLYPH_COUNT = 45;
+  for (let i = 0; i < GLYPH_COUNT; i++) {
+    const glyph = document.createElement("span");
+    glyph.className = "floating-glyph";
+    glyph.textContent = allChars[Math.floor(Math.random() * allChars.length)];
+    glyph.style.left = `${Math.random() * 100}%`;
+    glyph.style.fontSize = `${1 + Math.random() * 1.4}rem`;
+    glyph.style.setProperty("--drift", `${(Math.random() - 0.5) * 140}px`);
+    glyph.style.animationDuration = `${18 + Math.random() * 24}s`;
+    glyph.style.animationDelay = `${-Math.random() * 35}s`; // negative: already mid-float on load
+    field.appendChild(glyph);
   }
 })();
 
